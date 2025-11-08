@@ -18,7 +18,7 @@ OVERWRITE  = False # Set True to re-generate splits if they already exist
 for d in (TRAIN_DIR, TEST_DIR, SPLITS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-x_pat = re.compile(r"^kryptonite-(\d+)-X\.npy$", re.IGNORECASE) # To detect/match filenames
+detect_x = re.compile(r"^kryptonite-(\d+)-X\.npy$", re.IGNORECASE) # To detect/match filenames
 
 def find_pairs(base: Path):
     """
@@ -26,7 +26,7 @@ def find_pairs(base: Path):
     """
     pairs = []
     for name in os.listdir(base):
-        m = x_pat.match(name)
+        m = detect_x.match(name)
         if not m: 
             continue
         n = m.group(1) # Extracts the digit (no. of features)
@@ -65,13 +65,13 @@ def split_and_save(n, x_path, y_path):
         stratify=y
     )
 
-    # Save actual array copies to train/test folders
+    # Saves the actual array copies to train/test folders
     np.save(trX, X[idx_train], allow_pickle=False)
     np.save(trY, y[idx_train], allow_pickle=False)
     np.save(teX, X[idx_test],  allow_pickle=False)
     np.save(teY, y[idx_test],  allow_pickle=False)
 
-    # Save indices for provenance
+    # Saves the indices
     np.save(idx_tr, idx_train, allow_pickle=False)
     np.save(idx_te, idx_test,  allow_pickle=False)
 
