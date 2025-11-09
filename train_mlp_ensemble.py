@@ -28,7 +28,6 @@ from sklearn.model_selection import cross_val_score
 SEED = 42
 
 # ---------- BEST PARAMS ----------
-# BEST PARAMS FROM YOUR SUMMARY
 BEST_PARAMS: Dict[int, dict] = {
     10: {'clf__activation': 'relu', 'clf__alpha': 1.9762189340280066e-05,
          'clf__hidden_layer_sizes': (128,), 'clf__learning_rate': 'constant',
