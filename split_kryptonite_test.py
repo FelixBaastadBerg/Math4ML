@@ -12,7 +12,7 @@ TEST_DIR   = DATA_DIR / "Test_Data"
 SPLITS_DIR = DATA_DIR / "Splits"
 
 TEST_SIZE  = 0.20 # 20% test
-SEED       = 42
+SEED       = 45
 OVERWRITE  = False # Set True to re-generate splits if they already exist
 
 for d in (TRAIN_DIR, TEST_DIR, SPLITS_DIR):

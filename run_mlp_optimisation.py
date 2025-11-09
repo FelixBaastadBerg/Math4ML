@@ -22,12 +22,19 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, cross_val_
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import StratifiedKFold
 
 from tqdm.auto import tqdm
 from scipy.stats import loguniform  # for RandomizedSearchCV
 import optuna
 
-SEED = 42
+from sklearn.exceptions import ConvergenceWarning
+import warnings
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+
+SEED = 45
+
+cv_obj = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
     """
@@ -63,10 +70,11 @@ def base_mlp_pipeline() -> Pipeline:
             hidden_layer_sizes=(256, 256),
             activation="relu",
             alpha=3e-5,
+            tol=1e-3,
             learning_rate_init=7e-4,
             batch_size=128,
-            max_iter=1000,
-            early_stopping=True,
+            max_iter=500,
+            early_stopping=False,
             n_iter_no_change=15,
             random_state=SEED
         ))
@@ -74,7 +82,6 @@ def base_mlp_pipeline() -> Pipeline:
 
 # Search Spaces
 def grid_params() -> dict:
-    """Small, sensible grid near your best."""
     return {
         "clf__hidden_layer_sizes": [(256,128), (256,192), (256,256), (320,256), (384,256)],
         "clf__alpha":              [1e-5, 3e-5, 1e-4],
@@ -86,7 +93,7 @@ def grid_params() -> dict:
 
 
 def random_distributions() -> dict:
-    """Parameter distributions for RandomizedSearchCV (around your best)."""
+    """Parameter distributions for RandomizedSearchCV."""
     hls_choices = [
         (256,128), (256,192), (256,256), (320,256), (384,256),
         (256,), (384,), (256,256,128)
@@ -104,7 +111,7 @@ def random_distributions() -> dict:
 def run_grid(X, y, cv, n_jobs, verbose):
     est = base_mlp_pipeline()
     params = grid_params()
-    gs = GridSearchCV(est, params, cv=cv, scoring="accuracy", n_jobs=n_jobs, verbose=verbose)
+    gs = GridSearchCV(est, params, cv=cv_obj, scoring="accuracy", n_jobs=n_jobs, verbose=verbose)
     gs.fit(X, y)
     return gs.best_score_, gs.best_params_, gs.best_estimator_
 
@@ -117,7 +124,7 @@ def run_random(X, y, cv, n_jobs, verbose, n_iter):
         param_distributions=params,
         n_iter=n_iter,
         scoring="accuracy",
-        cv=cv,
+        cv=cv_obj,
         random_state=SEED,
         n_jobs=n_jobs,
         verbose=verbose

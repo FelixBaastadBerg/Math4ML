@@ -1,0 +1,35 @@
+{
+  "n": 16,
+  "method": "random",
+  "best_params": {
+    "clf__activation": "tanh",
+    "clf__alpha": 5.4992730415708444e-05,
+    "clf__batch_size": 64,
+    "clf__hidden_layer_sizes": [
+      256,
+      128
+    ],
+    "clf__learning_rate": "constant",
+    "clf__learning_rate_init": 0.0008068900014622218
+  },
+  "train_time_sec": 15.119038105010986,
+  "metrics": {
+    "accuracy": 0.94578125,
+    "precision": 0.9435185185185185,
+    "recall": 0.9490841353616889,
+    "f1": 0.946293143476242,
+    "auc": 0.9682649418788446
+  },
+  "shapes": {
+    "Xtr": [
+      25600,
+      16
+    ],
+    "ytr": 25600,
+    "Xte": [
+      6400,
+      16
+    ],
+    "yte": 6400
+  }
+}

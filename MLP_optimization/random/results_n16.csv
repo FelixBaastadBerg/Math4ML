@@ -1,2 +1,2 @@
 n,model,acc_mean,best_params
-16,MLP,0.9436718749999999,"{'clf__activation': 'tanh', 'clf__alpha': np.float64(3.9313013316603606e-05), 'clf__batch_size': 128, 'clf__hidden_layer_sizes': (256, 256, 128), 'clf__learning_rate': 'constant', 'clf__learning_rate_init': np.float64(0.0012695094153508013)}"
+16,MLP,0.9475000000000001,"{'clf__activation': 'tanh', 'clf__alpha': np.float64(5.4992730415708444e-05), 'clf__batch_size': 64, 'clf__hidden_layer_sizes': (256, 128), 'clf__learning_rate': 'constant', 'clf__learning_rate_init': np.float64(0.0008068900014622218)}"
