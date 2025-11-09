@@ -1,0 +1,2 @@
+n,model,acc_mean,acc_std,best_params
+18,MLP_Ensemble_5,0.9665972222222223,0.001338495504680306,"{'clf__activation': 'tanh', 'clf__alpha': np.float64(5.503363365456096e-06), 'clf__hidden_layer_sizes': (256, 128), 'clf__learning_rate': 'adaptive', 'clf__learning_rate_init': np.float64(0.002577748805373576)}"

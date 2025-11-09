@@ -1,0 +1,21 @@
+{
+  "n": 14,
+  "ensemble_size": 5,
+  "member_paths": [
+    "trained_mlp_ensembles/n14/mlp_member_0.joblib",
+    "trained_mlp_ensembles/n14/mlp_member_1.joblib",
+    "trained_mlp_ensembles/n14/mlp_member_2.joblib",
+    "trained_mlp_ensembles/n14/mlp_member_3.joblib",
+    "trained_mlp_ensembles/n14/mlp_member_4.joblib"
+  ],
+  "best_params": {
+    "clf__activation": "relu",
+    "clf__alpha": 7.411299781083242e-05,
+    "clf__hidden_layer_sizes": [
+      256
+    ],
+    "clf__learning_rate": "constant",
+    "clf__learning_rate_init": 0.0005787997763336387
+  },
+  "seed_base": 42
+}
