@@ -141,7 +141,7 @@ def run_bayes(X, y, cv_splits, n_trials, n_jobs):
 # ---------- Ensemble training after hyperparameter search ----------
 
 def build_ensemble(best_params: dict, n_estimators: int = 5) -> VotingClassifier:
-    """Build an ensemble of MLPs (same hyperparameters, different seeds)."""
+    """Build an ensemble of MLPs (same hyperparameters, different seeds)"""
     estimators = []
     for i in range(n_estimators):
         clf = Pipeline([

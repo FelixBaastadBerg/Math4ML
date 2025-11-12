@@ -141,7 +141,7 @@ def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
 
 
 def discover_ns(train_root: Path) -> List[int]:
-    """Find all n values available in Train_Data."""
+    """Find all n values available in Train_Data"""
     ns = set()
     for p in (train_root / "Train_Data").rglob("kryptonite-*-X-train.npy"):
         name = p.name.lower()
