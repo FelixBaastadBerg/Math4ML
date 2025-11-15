@@ -1,0 +1,2 @@
+n,ensemble_size,jobs,wall_train_sec,member_time_sum_sec,member_time_mean_sec,member_time_std_sec,effective_speedup,train_acc,test_acc,test_f1,test_auc,test_log_loss,test_brier,test_disagreement,test_prob_variance
+16,5,14,31.26224920898676,130.5582697079517,26.11165394159034,2.128304343059098,4.176227655124089,0.9711328125,0.9690625,0.9692642036634586,0.9728157238021676,0.1529022029560644,0.03258288384005395,0.0721875,0.008774899767473324

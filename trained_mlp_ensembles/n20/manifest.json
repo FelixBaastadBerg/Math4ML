@@ -17,5 +17,20 @@
     "clf__learning_rate": "constant",
     "clf__learning_rate_init": 0.00411083153928461
   },
-  "seed_base": 42
+  "seed_base": 42,
+  "timing": {
+    "wall_sec": 14.497918416047469,
+    "member_times_sec": [
+      11.69779112492688,
+      14.376603499986231,
+      7.544813667074777,
+      13.111501583945937,
+      7.994595457916148
+    ],
+    "sum_member_sec": 54.725305333849974,
+    "mean_member_sec": 10.945061066769995,
+    "std_member_sec": 2.731390862327889,
+    "effective_speedup": 3.774700875214995,
+    "jobs": 14
+  }
 }
