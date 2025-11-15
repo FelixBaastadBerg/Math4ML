@@ -70,7 +70,7 @@ def calibration_table(
     assert len(y_true) == len(y_prob)
 
     edges = _bin_edges(strategy, y_prob, n_bins)
-    # Digitize into bins; rightmost edge inclusive
+    # Digitize into bins, rightmost edge inclusive
     bin_idx = np.digitize(y_prob, edges[1:-1], right=True)  # 0..n_bins-1
 
     rows = []
@@ -112,15 +112,15 @@ def plot_reliability_diagram(
     show_confidence: bool = True,
 ):
     """
-    Plots reliability diagram: accuracy by bin vs diagonal.
-    Optionally overlays mean confidence per bin (as points).
+    Plots reliability diagram: accuracy by bin vs diagonal
+    Optionally... overlays mean confidence per bin (as points)
     """
     fig, ax = plt.subplots(figsize=(5.2, 4.3))
     # Bin centers for plotting
     centers = 0.5 * (df_bins["left"].values + df_bins["right"].values)
     acc = df_bins["accuracy"].values
 
-    # Some bins may be NaN if empty; mask them
+    # Some bins may be NaN if empty--mask them
     mask = ~np.isnan(acc)
     ax.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Perfect calibration")
     ax.plot(centers[mask], acc[mask], drawstyle="steps-mid", marker="o", linewidth=2, label="Empirical accuracy")
@@ -255,7 +255,7 @@ for n, paths in pairs.items():
     # Per-n output dir
     out_dir = EVAL_DIR / f"n{n}"
     ensure_dir(out_dir)
-    
+
     if n not in best_by_n:
         print(f"Skipping n={n}: no best params in {RESULTS_CSV}")
         continue
@@ -299,7 +299,7 @@ for n, paths in pairs.items():
             show_confidence=True
         )
 
-        # Adaptive/quantile-binned ECE (optional but useful)
+        # Adaptive ECE
         df_bins_q, ece_adapt, mce_adapt = calibration_table(yte, proba, n_bins=15, strategy="quantile")
         df_bins_q.to_csv(out_dir / "calibration_bins_adaptive.csv", index=False)
         plot_reliability_diagram(
@@ -309,7 +309,7 @@ for n, paths in pairs.items():
             show_confidence=True
         )
 
-        # Save per-sample predictions (handy for later analysis)
+        # Save per-sample predictions
         pd.DataFrame({
             "y_true": yte.astype(int),
             "y_pred": y_pred.astype(int),
