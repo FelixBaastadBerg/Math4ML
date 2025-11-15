@@ -35,7 +35,7 @@ if per_n:
 RESULTS_CSV = Path(f"./MLP_optimization/{METHOD}/results_all.csv")
 
 # where to save evaluation artifacts
-EVAL_DIR = Path("./Evaluation") / METHOD
+EVAL_DIR = Path("./Evaluation_Test") / METHOD
 EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 SEED = 45
@@ -127,7 +127,7 @@ def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
     pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
-            max_iter=500,
+            max_iter=2000,
             tol=1e-3,
             early_stopping=False,
             n_iter_no_change=15,
@@ -135,7 +135,7 @@ def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
         ))
     ])
     pipe.set_params(**best_params)
-    pipe.set_params(clf__early_stopping=False, clf__max_iter=1000)
+    pipe.set_params(clf__early_stopping=False, clf__max_iter=2000)
     return pipe
 
 # Load the best parameters
@@ -283,8 +283,8 @@ summary_csv = EVAL_DIR / "summary_test_metrics.csv"
 df_summary.to_csv(summary_csv, index=False)
 print(f"\nSaved overall summary CSV → {summary_csv}")
 
-TEST_SUMMARY = (Path("./Evaluation") / METHOD / "summary_test_metrics.csv")
-SAVE_DIR     = (Path("./Evaluation") / METHOD)
+TEST_SUMMARY = (Path("./Evaluation_Test") / METHOD / "summary_test_metrics.csv")
+SAVE_DIR     = (Path("./Evaluation_Test") / METHOD)
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Load data
