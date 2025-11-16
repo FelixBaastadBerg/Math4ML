@@ -1,15 +1,9 @@
 """
-run_mlp_ensemble_optimisation.py — Optimise an ensemble of MLPs on Kryptonite-n datasets
+Optimise an ensemble of MLPs on Kryptonite-n datasets
 
-Reads datasets from ./Datasets/Train_Data
-Expects files:
-  kryptonite-<n>-X-train.npy
-  kryptonite-<n>-y-train.npy
-
-Search modes:
-search grid   : GridSearchCV 
-search random : RandomizedSearchCV
-search bayes  : Optuna Bayesian optimization
+search grid     : GridSearchCV 
+search random   : RandomizedSearchCV
+search bayes    : Optuna Bayesian optimization
 """
 
 from pathlib import Path
@@ -31,9 +25,10 @@ import optuna
 
 SEED = 42
 
-
+"""
+Maps n -> {'X': path, 'y': path}
+"""
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
-    """Return mapping n -> {'X': path, 'y': path}."""
     variants: Dict[int, Dict[str, Path]] = {}
     for p in data_dir.rglob("*.npy"):
         name = p.name.lower()
@@ -55,8 +50,10 @@ def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
                 d["y"] = p
     return {n: d for n, d in variants.items() if d["X"] and d["y"]}
 
+"""
+Current Optimal MLP based on results from run_baselines_selectable.py
+"""
 def base_mlp_pipeline() -> Pipeline:
-    """A single MLP with scaling."""
     return Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -66,9 +63,8 @@ def base_mlp_pipeline() -> Pipeline:
         ))
     ])
 
-
+# Search Spaces
 def grid_params() -> dict:
-    """Small sensible grid"""
     return {
         "clf__hidden_layer_sizes": [(128,), (256,), (256,128), (512,256)],
         "clf__activation": ["relu", "tanh"],
@@ -77,9 +73,10 @@ def grid_params() -> dict:
         "clf__learning_rate": ["constant", "adaptive"],
     }
 
-
+"""
+Parameter distributions for RandomizedSearchCV
+"""
 def random_distributions() -> dict:
-    """Parameter distributions for RandomizedSearchCV"""
     return {
         "clf__hidden_layer_sizes": [(128,), (256,), (256,128), (512,256)],
         "clf__activation": ["relu", "tanh"],
@@ -87,9 +84,6 @@ def random_distributions() -> dict:
         "clf__learning_rate_init": loguniform(5e-4, 5e-3),
         "clf__learning_rate": ["constant", "adaptive"],
     }
-
-
-# ---------- Run grid/random/bayes search ----------
 
 def run_grid(X, y, cv, n_jobs, verbose):
     est = base_mlp_pipeline()
@@ -138,10 +132,10 @@ def run_bayes(X, y, cv_splits, n_trials, n_jobs):
     return study.best_value, best_params, best_est
 
 
-# ---------- Ensemble training after hyperparameter search ----------
-
+# ---------------- Ensemble training after hyperparameter search ----------------
+"""Build an ensemble of MLPs with the same hyperparameters but different seeds"""
 def build_ensemble(best_params: dict, n_estimators: int = 5) -> VotingClassifier:
-    """Build an ensemble of MLPs (same hyperparameters, different seeds)"""
+    
     estimators = []
     for i in range(n_estimators):
         clf = Pipeline([
@@ -158,8 +152,7 @@ def build_ensemble(best_params: dict, n_estimators: int = 5) -> VotingClassifier
     return ensemble
 
 
-# ---------- Main ----------
-
+# ---------------- Main ----------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("./Datasets/Train_Data"))
@@ -212,7 +205,7 @@ def main():
         ensemble = build_ensemble(best_params, n_estimators=args.ensemble_size)
         ensemble.fit(X, y)
 
-        # Evaluate ensemble (5-fold CV)
+        # Evaluate ensemble using 5-fold CV
         scores = cross_val_score(ensemble, X, y, cv=args.folds, scoring="accuracy", n_jobs=args.gs_jobs)
         print(f"  > Ensemble mean acc={scores.mean():.4f} ± {scores.std():.4f}")
 

@@ -1,5 +1,9 @@
 """
 Optimise MLP on Kryptonite-n datasets
+
+search grid     : GridSearchCV 
+search random   : RandomizedSearchCV
+search bayes    : Optuna Bayesian optimization
 """
 from pathlib import Path
 from typing import Dict, Tuple, List
