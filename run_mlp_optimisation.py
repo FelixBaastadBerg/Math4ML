@@ -1,15 +1,5 @@
 """
-run_mlp_optimisation.py — Optimise an MLP on Kryptonite-n datasets
-
-Reads datasets from ./Datasets/Train_Data
-Expects files:
-  kryptonite-<n>-X-train.npy
-  kryptonite-<n>-y-train.npy
-
-Search modes:
-search grid   : GridSearchCV 
-search random : RandomizedSearchCV
-search bayes  : Optuna Bayesian optimization
+Optimise MLP on Kryptonite-n datasets
 """
 from pathlib import Path
 from typing import Dict, Tuple, List
@@ -25,7 +15,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import StratifiedKFold
 
 from tqdm.auto import tqdm
-from scipy.stats import loguniform  # for RandomizedSearchCV
+from scipy.stats import loguniform 
 import optuna
 
 from sklearn.exceptions import ConvergenceWarning
@@ -36,11 +26,12 @@ SEED = 45
 
 cv_obj = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
+"""
+Maps n -> {'X': path, 'y': path}
+"""
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
-    """
-    Return mapping n -> {'X': path, 'y': path}.
-    """
-    variants: Dict[int, Dict[str, Path]] = {} # Variants has the type Dict[int, Dict[str, Path]] 
+    
+    variants: Dict[int, Dict[str, Path]] = {} 
     for p in data_dir.rglob("*.npy"):
         name = p.name.lower()
         if not name.startswith("kryptonite-"):
@@ -61,9 +52,10 @@ def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
                 d["y"] = p
     return {n: d for n, d in variants.items() if d["X"] and d["y"]}
 
-
+"""
+Current Optimal MLP based on results from run_baselines_selectable.py
+"""
 def base_mlp_pipeline() -> Pipeline:
-    """Current Optimal MLP based on results from run_baselines_selectable.py"""
     return Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -91,9 +83,10 @@ def grid_params() -> dict:
         "clf__activation":         ["relu", "tanh"],
     }
 
-
+"""
+Parameter distributions for RandomizedSearchCV
+"""
 def random_distributions() -> dict:
-    """Parameter distributions for RandomizedSearchCV."""
     hls_choices = [
         (256,128), (256,192), (256,256), (320,256), (384,256),
         (256,), (384,), (256,256,128)
