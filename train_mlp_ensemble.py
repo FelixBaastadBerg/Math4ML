@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
-train_mlp_ensemble.py — Train and evaluate an ensemble of MLPs on Kryptonite-n datasets.
-
-- Trains per-n ensembles using best hyperparameters you discovered.
-- Saves the trained ensemble members.
-- Validates robustness on ./Datasets/Test_Data (X-test, y-test).
+Train and evaluate an ensemble of MLPs on Kryptonite-n datasets.
 """
 
 from pathlib import Path
@@ -30,7 +26,7 @@ from sklearn.model_selection import cross_val_score
 
 SEED = 42
 
-# ---------- BEST PARAMS ----------
+# ---------------- Best Parameters ----------------
 BEST_PARAMS: Dict[int, dict] = {
     10: {'clf__activation': 'relu', 'clf__alpha': 1.9762189340280066e-05,
          'clf__hidden_layer_sizes': (128,), 'clf__learning_rate': 'constant',
@@ -52,41 +48,39 @@ BEST_PARAMS: Dict[int, dict] = {
          'clf__learning_rate_init': 0.00411083153928461},
 }
 
-# ---------- Calibration helpers (ECE / MCE) ----------
-
+# ---------------- Calibration helpers (ECE / MCE) ----------------
+"""
+- uniform: fixed-width bins over [0,1]
+- adaptive: equal-mass bins based on y_prob distribution
+"""
 def _bin_edges(strategy: str, y_prob: np.ndarray, n_bins: int) -> np.ndarray:
-    """
-    Compute bin edges for calibration:
-    - 'uniform': fixed-width bins over [0,1]
-    - 'quantile': equal-mass (adaptive) bins based on y_prob distribution
-    """
+    
     if strategy == "uniform":
         return np.linspace(0.0, 1.0, n_bins + 1)
     elif strategy == "quantile":
         qs = np.linspace(0, 1, n_bins + 1)
         edges = np.unique(np.quantile(y_prob, qs))
-        # ensure full coverage
+        # full coverage
         edges[0], edges[-1] = 0.0, 1.0
         return edges
     else:
         raise ValueError("strategy must be 'uniform' or 'quantile'")
 
 
+"""
+Compute per-bin calibration stats + ECE/MCE
+
+ECE = sum_b (n_b / N) * |acc_b - conf_b|
+MCE = max_b |acc_b - conf_b|
+"""
 def calibration_table(
     y_true: np.ndarray,
     y_prob: np.ndarray,
     n_bins: int = 15,
     strategy: str = "uniform",
 ) -> Tuple[pd.DataFrame, float, float]:
-    """
-    Compute per-bin calibration stats and ECE/MCE.
 
-    Returns (df_bins, ECE, MCE), where df_bins has columns:
-      ['bin', 'left', 'right', 'count', 'accuracy', 'confidence', 'gap'].
-
-    ECE = sum_b (n_b / N) * |acc_b - conf_b|
-    MCE = max_b |acc_b - conf_b|
-    """
+    
     assert y_prob.ndim == 1, "y_prob must be 1D probabilities for the positive class"
     assert len(y_true) == len(y_prob)
 
@@ -127,11 +121,12 @@ def calibration_table(
     df_bins = pd.DataFrame(rows)
     return df_bins, float(ece), float(mce)
 
-# ---------- UTIL ----------
+# ---------------- Utilities ----------------
+
+"""
+split = Train_Data, Test_Data
+"""
 def load_split(root: Path, n: int, split: str) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    split ∈ {"Train_Data", "Test_Data"}
-    """
     base = root / split
     Xp = base / f"kryptonite-{n}-X-{'train' if split=='Train_Data' else 'test'}.npy"
     yp = base / f"kryptonite-{n}-y-{'train' if split=='Train_Data' else 'test'}.npy"
@@ -143,8 +138,7 @@ def load_split(root: Path, n: int, split: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def make_member(seed: int, best_params: dict) -> Pipeline:
-    """One MLP pipeline with scaling, seeded for diversity"""
-    # Strip the "clf__" prefix because we set params at the Pipeline level later.
+    # No "clf__" because we set params later
     params_clean = {k.replace("clf__", ""): v for k, v in best_params.items()}
     clf = MLPClassifier(
         **params_clean,
@@ -160,20 +154,10 @@ def make_member(seed: int, best_params: dict) -> Pipeline:
     ])
     return pipe
 
-# """
-# Original, untimed ensemble fitting emthod
-# """
-# def fit_ensemble(X: np.ndarray, y: np.ndarray, best_params: dict, k: int) -> List[Pipeline]:
-#     """Train k members with different seeds"""
-#     members: List[Pipeline] = []
-#     for i in range(k):
-#         member = make_member(SEED + i, best_params)
-#         member.fit(X, y)
-#         members.append(member)
-#     return members
-
+"""
+Train a single member and return (model, train_seconds, index)
+"""
 def _fit_one_member(i: int, X: np.ndarray, y: np.ndarray, best_params: dict) -> Tuple[Pipeline, float, int]:
-    """Train a single member and return (model, train_seconds, index)"""
     member = make_member(SEED + i, best_params)
     t0 = time.perf_counter()
     member.fit(X, y)
@@ -190,10 +174,6 @@ def fit_ensemble(
     k: int,
     jobs: int
 ) -> Tuple[List[Pipeline], List[float], float]:
-    """
-    Train k members (optionally in parallel).
-    Returns (members, per_member_times, wall_clock_seconds).
-    """
     wall_start = time.perf_counter()
     if jobs == 1:
         members, times = [], []
@@ -202,11 +182,10 @@ def fit_ensemble(
             members.append(m)
             times.append(dt)
     else:
-        # joblib uses 'loky' backend by default (separate processes)
         results = Parallel(n_jobs=jobs, verbose=0)(
             delayed(_fit_one_member)(i, X, y, best_params) for i in range(k)
         )
-        # restore original order by index
+        # original order by index
         results.sort(key=lambda t: t[2])
         members = [t[0] for t in results]
         times   = [t[1] for t in results]
@@ -214,33 +193,36 @@ def fit_ensemble(
     return members, times, wall_elapsed
 
 
+"""
+Average member probabilities
+"""
 def ensemble_predict_proba(members: List[Pipeline], X: np.ndarray) -> np.ndarray:
-    """Average member probabilities; returns shape (n_samples, 2)"""
     probs = [m.predict_proba(X) for m in members]
     return np.mean(probs, axis=0)
 
-
+"""
+Fraction of samples where not all members agree on the predicted class
+Close to 0 = more agreement, higher = less robust
+"""
 def ensemble_disagreement(members: List[Pipeline], X: np.ndarray) -> float:
-    """
-    Fraction of samples where not all members agree on the predicted class
-    Values closer to 0 = more consensus; higher = less robust
-    """
     preds = np.column_stack([m.predict(X) for m in members])  # (n_samples, k)
     disagreed = np.any(preds != preds[:, [0]], axis=1).mean()
     return float(disagreed)
 
 
+"""
+Mean variance of the positive-class probabilities across ensemble members
+Higher variance = more predictive uncertainty
+"""
 def prob_variance(members: List[Pipeline], X: np.ndarray) -> float:
-    """
-    Mean variance of the positive-class probabilities across ensemble members
-    Higher variance => higher predictive uncertainty
-    """
     pos = np.column_stack([m.predict_proba(X)[:, 1] for m in members])  # (n_samples, k)
     return float(np.var(pos, axis=1).mean())
 
-
+"""
+Accuracy, F1, AUC, log loss, Brier, disagreement, prob variance
+"""
 def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
-    """Compute accuracy, F1, ROC-AUC, log loss, Brier, disagreement, prob variance"""
+    
     proba = ensemble_predict_proba(members, X)
     y_pred = (proba[:, 1] >= 0.5).astype(int)
 
@@ -253,16 +235,17 @@ def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
         "prob_variance": prob_variance(members, X),
         "confusion_matrix": confusion_matrix(y, y_pred).tolist()
     }
-    # ROC-AUC is only defined if both classes are present
+    # AUC is only defined if both classes are present
     try:
         metrics["roc_auc"] = roc_auc_score(y, proba[:, 1])
     except ValueError:
         metrics["roc_auc"] = None
     return metrics
 
-
+"""
+Find all n values available in Train_Data
+"""
 def discover_ns(train_root: Path) -> List[int]:
-    """Find all n values available in Train_Data"""
     ns = set()
     for p in (train_root / "Train_Data").rglob("kryptonite-*-X-train.npy"):
         name = p.name.lower()
@@ -274,7 +257,7 @@ def discover_ns(train_root: Path) -> List[int]:
     return sorted(ns)
 
 
-# ---------- Main ----------
+# ---------------- Main ----------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", type=Path, default=Path("./Datasets"))
@@ -297,16 +280,16 @@ def main():
 
     all_rows = []
     for n in n_values:
-        print(f"\n=== Training ensemble for n = {n} ===")
+        print(f"\n——— Training ensemble for n = {n} ———")
         if n not in BEST_PARAMS:
-            print(f"  ! No best_params available for n={n}; skipping.")
+            print(f"No best_params available for n={n}. Skipping")
             continue
 
         # Load data
         Xtr, ytr = load_split(args.data_root, n, "Train_Data")
         Xte, yte = load_split(args.data_root, n, "Test_Data")
 
-        # Fit ensemble (timed)
+        # Fit ensemble, timed
         members, member_times, wall_time = fit_ensemble(
             Xtr, ytr, BEST_PARAMS[n], args.ensemble_size, jobs=used_jobs
         )
@@ -315,8 +298,8 @@ def main():
         std_member_time = float(np.std(member_times))
         speedup = sum_member_time / wall_time if wall_time > 0 else np.nan
 
-        print(f"  Timing: wall={wall_time:.2f}s | "
-              f"sum(member)={sum_member_time:.2f}s | mean={mean_member_time:.2f}s ± {std_member_time:.2f}s | "
+        print(f"Timing: wall={wall_time:.2f}s"
+              f"sum(member)={sum_member_time:.2f}s | mean={mean_member_time:.2f}s ± {std_member_time:.2f}s"
               f"eff. speedup≈{speedup:.2f}×")
 
         # Save members and manifest
@@ -348,11 +331,11 @@ def main():
             with open(n_dir / "manifest.json", "w") as f:
                 json.dump(manifest, f, indent=2)
 
-        # Evaluate on TRAIN (sanity) and TEST (robustness)
+        # Evaluate on TRAIN and TEST 
         train_metrics = evaluate(members, Xtr, ytr)
         test_metrics = evaluate(members, Xte, yte)
 
-        # --- Calibration (ECE/MCE on TEST) ---
+        # ECE/MCE on TEST 
         # Use ensemble average probability for positive class
         proba_test = ensemble_predict_proba(members, Xte)[:, 1]
 
@@ -363,11 +346,10 @@ def main():
             yte, proba_test, n_bins=15, strategy="quantile"
         )
 
-        print(f"  Test ECE (uniform)  = {ece_uniform:.4f}, MCE = {mce_uniform:.4f}")
-        print(f"  Test ECE (adaptive) = {ece_adapt:.4f}, MCE = {mce_adapt:.4f}")
-        # --------------------------------------
+        print(f"Test ECE (uniform) = {ece_uniform:.4f}, MCE = {mce_uniform:.4f}")
+        print(f"Test ECE (adaptive) = {ece_adapt:.4f}, MCE = {mce_adapt:.4f}")
 
-        # Log
+        # Log 
         print(f"  Train: acc={train_metrics['accuracy']:.4f}, "
               f"f1={train_metrics['f1']:.4f}, "
               f"auc={train_metrics['roc_auc'] if train_metrics['roc_auc'] is not None else 'NA'}, "
@@ -388,12 +370,14 @@ def main():
             "n": n,
             "ensemble_size": args.ensemble_size,
             "jobs": used_jobs,
+
             #timing
             "wall_train_sec": wall_time,
             "member_time_sum_sec": sum_member_time,
             "member_time_mean_sec": mean_member_time,
             "member_time_std_sec": std_member_time,
             "effective_speedup": speedup,
+
             # metrics
             "train_acc": train_metrics["accuracy"],
             "test_acc": test_metrics["accuracy"],
@@ -403,6 +387,7 @@ def main():
             "test_brier": test_metrics["brier"],
             "test_disagreement": test_metrics["disagreement"],
             "test_prob_variance": test_metrics["prob_variance"],
+
             # calibration metrics (test)
             "test_ece_uniform": ece_uniform,
             "test_mce_uniform": mce_uniform,
@@ -410,7 +395,7 @@ def main():
             "test_mce_adaptive": mce_adapt,
         })
 
-        # Optional per-n CSV
+        # per-n CSV (optional)
         n_out_dir = args.save_dir / f"n{n}" if not args.skip_save else args.save_dir
         per_n_df = pd.DataFrame([all_rows[-1]])
         per_n_df.to_csv(n_out_dir / f"timing_and_metrics_n{n}.csv", index=False)
