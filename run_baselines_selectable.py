@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_baselines_selectable.py — Benchmark models on Kryptonite-n datasets with selectable models + progress bars.
+Benchmark models on Kryptonite-n datasets with selectable models + progress bars.
 
 Usage examples:
   # Run all default models on all datasets
@@ -46,13 +46,13 @@ from tqdm.auto import tqdm
 
 SEED = 42
 
-
+"""
+Return mapping n -> {'X': path, 'y': path, 'X_hidden': path or None}
+"""
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
-    """Return mapping n -> {'X': path, 'y': path, 'X_hidden': path or None}"""
     variants = {}
     for p in data_dir.rglob("*.npy"):
         name = p.name.lower()
-        # extract n
         n = None
         for tok in name.replace("-", "_").split("_"):
             if tok.isdigit():
@@ -77,8 +77,10 @@ def cv_grid(model, param_grid, X, y, cv=5, n_jobs=-1, verbose=0):
     return gs
 
 
+"""
+Return mapping key -> (pretty_name, estimator, param_grid)
+"""
 def build_all_searches() -> Dict[str, Tuple[str, object, dict]]:
-    """Return mapping key -> (pretty_name, estimator, param_grid)"""
     searches = {}
 
     searches["logreg"] = (
