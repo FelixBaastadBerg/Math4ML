@@ -6,34 +6,35 @@ from sklearn.model_selection import train_test_split
 
 DATA_DIR   = Path("/Math4ML/Datasets")
 SCRIPT_DIR = Path(__file__).resolve().parent # Path to the folder containing this script
-DATA_DIR   = SCRIPT_DIR / "Datasets" # Folder containing kryptonite-N-X.npy/-y.npy
+DATA_DIR   = SCRIPT_DIR / "Datasets" # Folder containing datasets
 TRAIN_DIR  = DATA_DIR / "Train_Data"
 TEST_DIR   = DATA_DIR / "Test_Data"
 SPLITS_DIR = DATA_DIR / "Splits"
 
 TEST_SIZE  = 0.20 # 20% test
 SEED       = 45
-OVERWRITE  = False # Set True to re-generate splits if they already exist
+OVERWRITE  = False # TRUE to re-generate splits if they already exist
 
 for d in (TRAIN_DIR, TEST_DIR, SPLITS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-detect_x = re.compile(r"^kryptonite-(\d+)-X\.npy$", re.IGNORECASE) # To detect/match filenames
+detect_x = re.compile(r"^kryptonite-(\d+)-X\.npy$", re.IGNORECASE)
 
+"""
+Find X, Y files
+"""
 def find_pairs(base: Path):
-    """
-    Find corresponding X and Y files
-    """
+    
     pairs = []
     for name in os.listdir(base):
         m = detect_x.match(name)
         if not m: 
             continue
-        n = m.group(1) # Extracts the digit (no. of features)
+        n = m.group(1) # number of features
         x_path = base / name
         y_path = base / f"kryptonite-{n}-y.npy"
         if not y_path.exists():
-            print(f"Missing y for kryptonite-{n}; skipping.")
+            print(f"Missing y for kryptonite-{n}. Skipping")
             continue
         pairs.append((n, x_path, y_path))
     pairs.sort(key=lambda t: int(t[0]))
@@ -44,7 +45,7 @@ def split_and_save(n, x_path, y_path):
     y = np.load(y_path, allow_pickle=False)
     if len(X) != len(y):
         raise ValueError(f"Len mismatch kryptonite-{n}: X={len(X)} vs y={len(y)}")
-    # Defining the output paths
+    # Output paths
     trX = TRAIN_DIR / f"kryptonite-{n}-X-train.npy"
     trY = TRAIN_DIR / f"kryptonite-{n}-y-train.npy"
     teX = TEST_DIR  / f"kryptonite-{n}-X-test.npy"
@@ -65,13 +66,13 @@ def split_and_save(n, x_path, y_path):
         stratify=y
     )
 
-    # Saves the actual array copies to train/test folders
+    # Save the actual array copies to train/test folders
     np.save(trX, X[idx_train], allow_pickle=False)
     np.save(trY, y[idx_train], allow_pickle=False)
     np.save(teX, X[idx_test],  allow_pickle=False)
     np.save(teY, y[idx_test],  allow_pickle=False)
 
-    # Saves the indices
+    # Save the indices
     np.save(idx_tr, idx_train, allow_pickle=False)
     np.save(idx_te, idx_test,  allow_pickle=False)
 
