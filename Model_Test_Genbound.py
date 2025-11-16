@@ -56,15 +56,20 @@ N_EPOCHS = 100         # how many epochs to train/log
 def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
+"""
+Replace np.float64(1.23e-5) with 1.23e-5 in a string representation
+"""
 def clean_np_floats(s: str) -> str:
-    """Replace np.float64(1.23e-5) with 1.23e-5 in a string representation."""
+    
     return re.sub(r"np\.float64\(([^)]+)\)", r"\1", s)
 
+
+"""
+Reads results_all.csv and returns { n: best_params_dict }
+Handles stringified dicts and cleans np.float64(...) wrappers
+"""
 def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
-    """
-    Reads results_all.csv and returns { n: best_params_dict }.
-    Handles stringified dicts and cleans np.float64(...) wrappers.
-    """
+    
     assert results_csv.exists(), f"Missing results CSV: {results_csv}"
     df = pd.read_csv(results_csv)
     out: Dict[int, Dict[str, Any]] = {}
@@ -84,7 +89,7 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
-        # Be safe: convert hidden_layer_sizes list -> tuple if needed
+        # Be safe... convert hidden_layer_sizes list -> tuple if needed
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -92,14 +97,15 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         out[n] = params
     return out
 
-# Accept files like: kryptonite-<n>-(X|x|Y|y)-(train|test).npy
+# Accept files like the kryptonite.npy files
 _PAT = re.compile(r"^kryptonite-(\d+)-([xy])-(train|test)\.npy$", re.IGNORECASE)
 
+"""
+Scan dir_path for kryptonite-n-(x|y)-<expected_split>.npy 
+Return { n: {'X': Path or None, 'y': Path or None} }
+"""
 def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Path]]:
-    """
-    Scan dir_path for kryptonite-n-(x|y)-<expected_split>.npy (case-insensitive).
-    Return { n: {'X': Path or None, 'y': Path or None} }.
-    """
+    
     idx: Dict[int, Dict[str, Path]] = {}
     for p in dir_path.rglob("*.npy"):
         m = _PAT.match(p.name)
@@ -117,11 +123,12 @@ def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Pat
             d["y"] = p
     return idx
 
+"""
+Find matching train/test pairs by n
+Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four exist
+"""
 def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[str, Path]]:
-    """
-    Find matching train/test pairs by n.
-    Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four exist.
-    """
+    
     tr = _index_split(train_dir, "train")
     te = _index_split(test_dir, "test")
 
@@ -133,16 +140,16 @@ def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[st
                 "Xte": te[n]["X"], "yte": te[n]["y"],
             }
     return pairs
+"""
+Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
 
+We override to:
+    - warm_start=True
+    - max_iter=1
+so that each call to fit() performs ONE epoch, and we can log per-epoch metrics
+"""
 def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
-    """
-    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied.
-
-    We override to:
-      - warm_start=True
-      - max_iter=1
-    so that each call to fit() performs ONE epoch, and we can log per-epoch metrics.
-    """
+    
     pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -167,25 +174,26 @@ def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
     )
     return pipe
 
+"""
+Heuristic implementation of a spectrally-normalized, margin-based bound term.
+
+Structure inspired by Bartlett et al. (2017):
+    bound_term ~ ( R * sqrt(S) ) / (gamma_hat * sqrt(m))
+
+    where:
+    R  = product of spectral norms ||W_l||_2
+    S  = sum_l ||W_l||_F^2 / ||W_l||_2^2
+    m  = # of training examples
+    gamma_hat = empirical margin, here approximated from predict_proba:
+        gamma_hat = min_i [ p_true(i) - max_{y!=true} p_y(i) ]
+
+This is a *qualitative* SOTA-style norm-based bound component,
+meant for logging how the theoretical complexity evolves.
+"""
 def compute_spectral_norm_bound_term(clf: MLPClassifier,
                                      X_train: np.ndarray,
                                      y_train: np.ndarray) -> float | None:
-    """
-    Heuristic implementation of a *spectrally-normalized, margin-based* bound term.
-
-    Structure inspired by Bartlett et al. (2017):
-        bound_term ~ ( R * sqrt(S) ) / (gamma_hat * sqrt(m))
-
-      where:
-        R  = product of spectral norms ||W_l||_2
-        S  = sum_l ||W_l||_F^2 / ||W_l||_2^2
-        m  = # of training examples
-        gamma_hat = empirical margin, here approximated from predict_proba:
-            gamma_hat = min_i [ p_true(i) - max_{y!=true} p_y(i) ]
-
-    This is a *qualitative* SOTA-style norm-based bound component,
-    meant for logging how the theoretical complexity evolves.
-    """
+    
 
     # Must have probabilities and classes
     if not hasattr(clf, "predict_proba") or not hasattr(clf, "classes_"):
@@ -225,7 +233,7 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
     margins = np.array(margins, dtype=float)
     gamma_hat = float(np.min(margins))
     if gamma_hat <= 0:
-        # classifier not margin-separable yet → bound will be huge / meaningless
+        # classifier not margin-separable yet... bound will be huge / meaningless
         gamma_hat = 1e-8
 
     # layer-wise weights
@@ -251,7 +259,6 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
 
 # ---------------------------------------------------------------------
 # Main: load data, build model for n=10, epoch-wise training + logging
-# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
     # Load tuned hyperparameters
@@ -341,7 +348,7 @@ if __name__ == "__main__":
     df_epochs.to_csv(csv_path, index=False)
     print(f"\nSaved epoch-wise accuracies, errors, and bound terms to {csv_path}")
 
-    # Optional: quick plot of accuracies + bound term magnitude
+    # Optional quick plot of accuracies + bound term magnitude
     try:
         fig, ax1 = plt.subplots(figsize=(7, 4))
 
