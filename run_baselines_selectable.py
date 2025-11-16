@@ -201,7 +201,7 @@ def main():
         df_n.to_csv(out_csv, index=False)
         print(f"  Saved {out_csv}")
 
-        # Export hidden predictions if requested
+        # Export hidden predictions if indicated
         if args.export_hidden and paths.get("X_hidden"):
             print(f"  Fitting best model '{best_name}' on full train and exporting hidden predictions...")
             best_est = best_search.best_estimator_

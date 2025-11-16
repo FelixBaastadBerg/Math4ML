@@ -140,10 +140,11 @@ def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[st
                 "Xte": te[n]["X"], "yte": te[n]["y"],
             }
     return pairs
+
 """
 Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
 
-We override to:
+Override to:
     - warm_start=True
     - max_iter=1
 so that each call to fit() performs ONE epoch, and we can log per-epoch metrics
