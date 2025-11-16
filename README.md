@@ -13,7 +13,7 @@ We performed the following:
 - and derive **generalisation bounds** (Hoeffding vs Chebyshev)
 
 All experiments are run on the Kryptonite-n datasets for  
-\(n \in \{10,12,14,16,18,20\}\).
+n in {10,12,14,16,18,20}.
 
 ---
 
@@ -21,16 +21,14 @@ All experiments are run on the Kryptonite-n datasets for
 
 ```text
 .
-├── Convergence_Analysis/        # Scripts / outputs for training curve analysis
+├── Convergence_Analysis/        # Outputs for training curve analysis
 ├── Datasets/                    # Kryptonite-n data (Train_Data / Test_Data)
-├── Evaluation/                  # Saved metrics, plots, and summaries
-├── Initial_Exploration/         # Early EDA notebooks / figures
-├── MLP_ECE/                     # Single-MLP calibration results & plots
+├── Initial_Exploration/         # Notebooks from initial exploration of dataset along with figures
+├── MLP_ECE/                     # Saved Single-MLP calibration results, plots, evaluation metrics, and hyperparameter search results
 ├── MLP_ensemble_optimization/   # Ensemble hyperparameter search results
-├── MLP_optimization/            # Single-MLP hyperparameter search results
-├── trained_mlp_ensembles/       # Saved ensemble members and manifests
+├── trained_mlp_ensembles/       # Saved ensemble members, manifests, evaluation metrics, and results
 │
-├── cnn_genbound.py              # Generalisation bounds for CNN models
+├── cnn_genbound.py              # Generalisation bounds for CNN models 
 ├── convergence_analysis.py      # Scripts to generate training/validation curves
 ├── explore_datasets.ipynb       # Notebook for PCA, correlations, etc.
 ├── MLP_ECE_eval.py              # Evaluate *single* tuned MLP + ECE + reliability
