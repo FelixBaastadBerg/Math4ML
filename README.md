@@ -19,6 +19,40 @@ n ∈ {10,12,14,16,18,20}.
 ---
 
 # Models
+
+## MLP
+Run the best values from Hyperparameter tuning for all $n$ at the same time. 
+```
+python MLP_ECE.py
+```
+Run with the creation of the generalization bound. 
+```
+python Model_Test_Genbound.py
+```
+Run with the convergence analysis.
+```
+python convergence_analysis.py
+```
+Finding hyperparameters:
+```
+python run_mlp_optimisation.py --search grid
+```
+Run the optimized model for the hidden submission set to predict labels
+```
+python train_mlp_hidden_submission.py 
+```
+
+
+## MLP ensemble
+For actually training the model with optimal hyperparameters. 
+```
+python train_mlp_ensemble.py
+```
+Hyperparameter tuning.
+```
+python run_mlp_ensemble_optimisation.py --search grid
+```
+
 ## CNN
 The cnn code is ran from the file "cnn_genbound.py". The current code is optimized for n = 10, which will generate a file where the gen bound decreases to 0.4 with 0.9635 in accuracy. Run "python cnn_genbound.py" to see the accuracy and the genBound update. It is currently using batch norm, learning rate scheduler and very high L2 loss. 
 ```
@@ -30,6 +64,19 @@ The svm code is in the "svm.py". The code runs for all $n$ choosing the best hyp
 ```
 python svm.py --n 10
 ```
+
+
+# Exploring models and dataset
+For exploring models using 
+```
+python run_baselines_selectables.py --models poly, logreg, mlp --n-list 10 
+```
+Splitting the dataset 80/20 
+```
+python split_kryptonite_test.py 
+```
+
+
 
 ## Repository structure
 
