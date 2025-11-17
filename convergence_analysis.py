@@ -28,6 +28,7 @@ METHOD = "random" # which tuning results to use: "random", "grid", or "bayes"
 res_dir = Path("./MLP_optimization") / METHOD
 per_n = sorted(res_dir.glob("results_n*.csv"))
 if per_n:
+    # consolidate per-n results into a single all file if missing
     df_all = (
         pd.concat((pd.read_csv(p) for p in per_n), ignore_index=True)
         .sort_values("n")
@@ -55,7 +56,8 @@ def clean_np_floats(s: str) -> str:
 
 def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
     """
-    Reads data and returns { n: best_params_dict }.
+    Reads CSV with tuning results and returns { n: best_params_dict }.
+    Handles both string and dict formats for the best_params column.
     """
     assert results_csv.exists(), f"Missing results CSV: {results_csv}"
     df = pd.read_csv(results_csv)
@@ -76,6 +78,7 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
+        # sklearn expects tuple not list for hidden_layer_sizes
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -150,16 +153,16 @@ def compute_cv_val_curves(
     best_params: Dict[str, Any],
     n_splits: int = 5,
     max_epochs: int = 100,
-) -> (List[float], List[float], List[float]):
+) -> tuple:
     """
     Perform Stratified K-Fold cross-validation on (X, y) and
     compute the mean TRAIN loss, VALIDATION loss,
     and VALIDATION accuracy across folds for each epoch.
+    
+    Uses warm_start=True to train one epoch at a time and record metrics.
 
     Returns:
-        mean_train_loss
-        mean_val_loss
-        mean_val_acc
+        (mean_train_loss, mean_val_loss, mean_val_acc) - each a list of length max_epochs
     """
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
     all_fold_train_losses: List[List[float]] = []
@@ -186,10 +189,12 @@ def compute_cv_val_curves(
         for epoch in range(1, max_epochs + 1):
             pipe.fit(X_tr, y_tr)  # continues training due to warm_start
 
+            # Get training loss
             y_tr_proba = pipe.predict_proba(X_tr)
             train_loss = log_loss(y_tr, y_tr_proba, labels=unique_labels)
             fold_train_losses.append(train_loss)
 
+            # Get validation loss and accuracy
             y_val_proba = pipe.predict_proba(X_val)
             y_val_pred = pipe.predict(X_val)
 
@@ -203,6 +208,7 @@ def compute_cv_val_curves(
         all_fold_val_losses.append(fold_val_losses)
         all_fold_accs.append(fold_accs)
 
+    # Average across all folds
     train_losses_arr = np.array(all_fold_train_losses)
     val_losses_arr = np.array(all_fold_val_losses)
     accs_arr = np.array(all_fold_accs)
@@ -216,6 +222,10 @@ def compute_cv_val_curves(
 def compare_optimizers_for_n16(
     X, y, best_params, n_splits=5, max_epochs=60
 ):
+    """
+    Compare Adam vs SGD on n=16 data. SGD often shows different convergence behavior,
+    so this is useful for understanding solver-specific dynamics.
+    """
     solvers = ["adam", "sgd"]
     results = {}
 
@@ -226,6 +236,7 @@ def compare_optimizers_for_n16(
         params["clf__solver"] = solver
 
         if solver == "sgd":
+            # SGD needs a slightly higher learning rate and momentum to converge well
             params["clf__learning_rate_init"] = 0.01
             params["clf__momentum"] = 0.9
 
@@ -331,7 +342,7 @@ def run_single_n16(best_by_n, train_sets):
 
 
 def main():
-    # Load the best parameters for each n
+    # Load the best parameters for each n from tuning results
     best_by_n = load_best_params_by_n(RESULTS_CSV)
     
 
@@ -339,12 +350,15 @@ def main():
     train_sets = discover_train_sets(TRAIN_DIR)
     assert train_sets, f"No training sets found under {TRAIN_DIR}"
 
+    # HACK: for now just run n=16 (was debugging something here)
+    # TODO: uncomment the loop below to run convergence analysis for all n
     run_single_n16(best_by_n, train_sets)
     return
 
     print(f"Found best params for n: {sorted(best_by_n.keys())}")
     print(f"Found training sets for n: {sorted(train_sets.keys())}")
 
+    # Main convergence analysis loop - track train/val loss across epochs
     for n, paths in sorted(train_sets.items()):
         if n not in best_by_n:
             print(f"Skipping n={n}: no best params in {RESULTS_CSV}")
@@ -357,7 +371,7 @@ def main():
 
         best_params = best_by_n[n]
 
-        # Compute cross-validated curves
+        # Compute cross-validated curves - this takes a while since we do 5 folds * 100 epochs
         t0 = time.time()
         mean_train_loss, mean_val_loss, mean_val_acc = compute_cv_val_curves(
             Xtr, ytr, best_params, n_splits=5, max_epochs=100
@@ -368,6 +382,7 @@ def main():
         epochs = np.arange(1, len(mean_val_loss) + 1)
 
         # ---- Plot TRAIN + VALIDATION loss vs epochs ----
+        # This shows whether we're overfitting (val loss > train loss) or underfitting
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, mean_train_loss, marker="o", label="Train Loss", color="orange")
         plt.plot(epochs, mean_val_loss, marker="s", label="Validation Loss", color="blue")
@@ -384,6 +399,7 @@ def main():
         print(f"  Saved train+val loss plot to {save_path_loss}")
 
         # ---- Plot validation accuracy vs epochs ----
+        # Useful for seeing when performance plateaus
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, mean_val_acc, marker="o")
         plt.title(f"Mean CV Validation Accuracy vs Epochs (kryptonite-{n})")

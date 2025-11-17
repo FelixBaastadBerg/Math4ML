@@ -1,4 +1,3 @@
-
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 
@@ -25,6 +24,7 @@ TEST_DIR  = Path("./Datasets/Test_Data")
 
 METHOD = "random" # which tuning results to use: "random", "grid", or "bayes"
 
+# consolidate per-n CSVs into a single results_all.csv if it doesn't exist
 res_dir = Path("./MLP_optimization") / METHOD
 per_n = sorted(res_dir.glob("results_n*.csv"))
 if per_n:
@@ -41,8 +41,9 @@ EVAL_DIR = Path("./Evaluation") / METHOD
 EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 SEED = 45
-TARGET_N = 20        
-N_EPOCHS = 100         
+TARGET_N = 20        # which dataset size to analyze
+N_EPOCHS = 100       # how many training epochs to run
+
 
 def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
@@ -50,7 +51,8 @@ def ensure_dir(p: Path):
 
 def clean_np_floats(s: str) -> str:
     """
-    Replace np.float64(1.23e-5) with 1.23e-5 in a string representation
+    Replace np.float64(1.23e-5) with 1.23e-5 in a string representation.
+    Pandas sometimes wraps floats in np.float64(...) when serializing to CSV.
     """
     return re.sub(r"np\.float64\(([^)]+)\)", r"\1", s)
 
@@ -58,7 +60,7 @@ def clean_np_floats(s: str) -> str:
 
 def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
     """
-    Reads data and returns { n: best_params_dict }
+    Reads optimization results and returns { n: best_params_dict }
     """
     assert results_csv.exists(), f"Missing results CSV: {results_csv}"
     df = pd.read_csv(results_csv)
@@ -66,6 +68,7 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
     for _, row in df.iterrows():
         n = int(row["n"])
         raw = row["best_params"]
+        # handle both string and dict formats since we're reading from CSV
         if isinstance(raw, str):
             cleaned = clean_np_floats(raw)
             try:
@@ -79,6 +82,7 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
+        # sklearn expects tuple not list for hidden_layer_sizes
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -115,8 +119,8 @@ def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Pat
 
 def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[str, Path]]:
     """
-    Find matching train/test pairs by n
-    Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four exist
+    Find matching train/test pairs by n.
+    Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four files exist.
     """
     tr = _index_split(train_dir, "train")
     te = _index_split(test_dir, "test")
@@ -133,7 +137,8 @@ def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[st
 
 def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
     """
-    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
+    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied.
+    Set up for epoch-wise training: warm_start=True, max_iter=1 per fit call.
     """
     pipe = Pipeline([
         ("scaler", StandardScaler()),
@@ -150,7 +155,7 @@ def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
 
     pipe.set_params(**best_params)
 
-    # Force our per-epoch training setup
+    # Force our per-epoch training setup (overwrite any tuned values)
     pipe.set_params(
         clf__early_stopping=False,
         clf__max_iter=1,
@@ -164,15 +169,19 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
                                      X_train: np.ndarray,
                                      y_train: np.ndarray) -> float | None:
     """
-    Structure inspired by Bartlett et al. (2017):
+    Compute a spectral norm-based generalization bound term inspired by Bartlett et al. (2017):
+    
         bound_term ~ ( R * sqrt(S) ) / (gamma_hat * sqrt(m))
 
-        where:
-        R  = product of spectral norms ||W_l||_2
-        S  = sum_l ||W_l||_F^2 / ||W_l||_2^2
-        m  = # of training examples
-        gamma_hat = empirical margin, here approximated from predict_proba:
-            gamma_hat = min_i [ p_true(i) - max_{y!=true} p_y(i) ]
+    Where:
+        R  = product of spectral norms ||W_l||_2 of weight matrices
+        S  = sum_l ||W_l||_F^2 / ||W_l||_2^2 (Frobenius / spectral norm squared)
+        m  = number of training examples
+        gamma_hat = empirical margin, approximated from predict_proba:
+            margin_i = p_true(i) - max_{y != true} p_y(i)
+            gamma_hat = min_i margin_i (smallest margin across training set)
+    
+    Returns None if conditions aren't met (no proba, no trained weights, etc).
     """
 
     # Must have probabilities and classes
@@ -199,7 +208,7 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
     label_to_idx = {label: idx for idx, label in enumerate(classes)}
 
     # Build margin from probabilities:
-    # margin_i = p_true(i) - max_{y!=true} p_y(i)
+    # margin_i = p_true(i) - max_{y != true} p_y(i)
     margins: List[float] = []
     for yi, probs in zip(y_train, proba):
         if yi not in label_to_idx:
@@ -214,9 +223,10 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
     gamma_hat = float(np.min(margins))
     if gamma_hat <= 0:
         # classifier not margin-separable yet... bound will be huge / meaningless
+        # clamp to tiny positive value to avoid division by zero
         gamma_hat = 1e-8
 
-    # layer-wise weights
+    # Extract layer-wise weight matrices
     coefs: List[np.ndarray] = getattr(clf, "coefs_", None)
     if coefs is None or len(coefs) == 0:
         return None
@@ -224,6 +234,7 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
     spectral_prod = 1.0
     sum_frob_over_spec2 = 0.0
 
+    # Accumulate spectral norm product and Frobenius/spectral term
     for W in coefs:
         spec = float(np.linalg.norm(W, 2))
         frob = float(np.linalg.norm(W, "fro"))
@@ -232,7 +243,9 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
         spectral_prod *= spec
         sum_frob_over_spec2 += (frob ** 2) / (spec ** 2 + 1e-12)
 
+    # Complexity measure = R * sqrt(S)
     complexity = spectral_prod * np.sqrt(sum_frob_over_spec2)
+    # Bound term = complexity / (margin * sqrt(m))
     bound_term = complexity / (gamma_hat * np.sqrt(m) + 1e-8)
 
     return float(bound_term)
@@ -273,7 +286,7 @@ if __name__ == "__main__":
     # Prepare logging structure
     epoch_logs = []
 
-    # Epoch-wise training
+    # Epoch-wise training loop: fit one epoch at a time and track metrics
     for epoch in range(1, N_EPOCHS + 1):
         t0 = time.time()
         model.fit(Xtr, ytr)   # 1 epoch because clf__max_iter=1 and warm_start=True
@@ -289,7 +302,7 @@ if __name__ == "__main__":
         train_err = 1.0 - float(train_acc)
         test_err  = 1.0 - float(test_acc)
 
-        # Extract underlying classifier
+        # Extract underlying classifier for generalization bound computation
         clf: MLPClassifier = model.named_steps["clf"]
 
         # Compute norm-based bound term and implied error bound
@@ -298,6 +311,7 @@ if __name__ == "__main__":
             bound_term_print = "NA"
             bound_error = None
         else:
+            # Implied upper bound on test error = train error + bound term
             bound_error = float(np.clip(train_err + bound_term, 0.0, 1.0))
             bound_term_print = f"{bound_term:.4e}"
 
@@ -319,15 +333,17 @@ if __name__ == "__main__":
             f"bound_term={bound_term_print}"
         )
 
-    # Save epoch-wise logs to CSV
+    # Save epoch-wise logs to CSV for later analysis
     df_epochs = pd.DataFrame(epoch_logs)
     csv_path = out_dir / f"epoch_bounds_n{n}.csv"
     df_epochs.to_csv(csv_path, index=False)
     print(f"\nSaved epoch-wise accuracies, errors, and bound terms to {csv_path}")
 
+    # Plot accuracy curves and bound term trajectory
     try:
         fig, ax1 = plt.subplots(figsize=(7, 4))
 
+        # Left y-axis: accuracy
         ax1.plot(df_epochs["epoch"], df_epochs["train_accuracy"],
                  label="Train Accuracy", linewidth=2)
         ax1.plot(df_epochs["epoch"], df_epochs["test_accuracy"],
@@ -337,6 +353,7 @@ if __name__ == "__main__":
         ax1.set_ylim(0.0, 1.0)
         ax1.grid(True, linestyle="--", alpha=0.5)
 
+        # Right y-axis: bound term (if available)
         ax2 = ax1.twinx()
         if df_epochs["bound_term"].notna().any():
             ax2.plot(
@@ -348,6 +365,7 @@ if __name__ == "__main__":
             )
             ax2.set_ylabel("Bound term (scale arbitrary)")
 
+        # Combine legends from both axes
         lines, labels = ax1.get_legend_handles_labels()
         if df_epochs["bound_term"].notna().any():
             lines2, labels2 = ax2.get_legend_handles_labels()

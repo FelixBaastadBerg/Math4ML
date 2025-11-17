@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-train_mlp_for_hidden.py
-
-Train a single MLP per Kryptonite-n dataset using the best hyperparameters
-from results_all.csv on the full labelled datasets
-
-This script then predicts labels for the hidden sets
-
-Outputs are written to:
-    ./Hidden_Kryptonite_Submission/
-        n10/
-            mlp_model.joblib
-            hidden_predictions.npy
-            hidden_predictions.csv
-            manifest.json
-        ...
-        hidden_predictions_all.csv
-"""
-
 import re
 import ast
 import json
@@ -47,6 +28,7 @@ SEED = 45
 
 def clean_np_floats(s: str) -> str:
     """Replace np.float64(1.23e-5) with 1.23e-5 in a string representation."""
+    # regex to strip out numpy type wrappers - pandas sometimes does this when serializing
     return re.sub(r"np\.float64\(([^)]+)\)", r"\1", s)
 
 
@@ -61,6 +43,7 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
     for _, row in df.iterrows():
         n = int(row["n"])
         raw = row["best_params"]
+        # handle both string and dict formats since we're reading from CSV
         if isinstance(raw, str):
             cleaned = clean_np_floats(raw)
             try:
@@ -72,6 +55,7 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
+        # sklearn expects tuple not list for hidden_layer_sizes
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -84,6 +68,7 @@ def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
     """
     Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
     """
+    # always scale first, then pass to classifier
     pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -94,6 +79,7 @@ def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
             random_state=SEED,
         )),
     ])
+    # apply the hyperparams from our tuning results
     pipe.set_params(**best_params)
     return pipe
 
@@ -130,6 +116,7 @@ def discover_full_labelled(data_root: Path) -> Dict[int, Dict[str, Path]]:
         else:
             d["y"] = p
 
+    # only return n values where we have both X and y
     out: Dict[int, Dict[str, Path]] = {}
     for n, d in idx.items():
         if d["X"] is not None and d["y"] is not None:
@@ -166,6 +153,7 @@ def main():
     full_sets = discover_full_labelled(DATA_ROOT)
     hidden_sets = discover_hidden_inputs(DATA_ROOT)
 
+    # only process n values where we have params, full data, AND hidden test data
     ns = sorted(set(best_by_n.keys()) & set(full_sets.keys()) & set(hidden_sets.keys()))
     if not ns:
         raise RuntimeError("No matching n found across best_params, full datasets, and hidden datasets.")
@@ -187,7 +175,7 @@ def main():
         print(f"  Full data: X{X_full.shape}, y{y_full.shape}")
         print(f"  Hidden X: {hidden_X_path.name}")
 
-        # Build and train model
+        # Build and train model - train on full labelled set with best hyperparams from tuning
         model = build_pipeline_from_params(best_params)
         model.fit(X_full, y_full)
 
@@ -195,10 +183,11 @@ def main():
         X_hidden = np.load(hidden_X_path)
         y_hidden_pred = model.predict(X_hidden)
 
-        # Optionally compute probabilities
+        # Also get prediction probabilities if the model supports it
         try:
             y_hidden_prob = model.predict_proba(X_hidden)[:, 1]
         except Exception:
+            # some models might not have predict_proba, that's fine
             y_hidden_prob = None
 
         # Per-n output directory
@@ -214,6 +203,7 @@ def main():
         npy_path = n_dir / "hidden_predictions.npy"
         np.save(npy_path, y_hidden_pred.astype(int))
 
+        # save as CSV too for easier inspection
         if y_hidden_prob is not None:
             df_pred = pd.DataFrame({
                 "index": np.arange(len(y_hidden_pred)),
@@ -230,6 +220,7 @@ def main():
         df_pred.to_csv(csv_path, index=False)
         print(f"  Saved hidden predictions -> {csv_path}")
 
+        # Create a manifest file for tracking - useful when you have multiple n values
         manifest = {
             "n": n,
             "model_path": str(model_path),
@@ -247,7 +238,7 @@ def main():
         df_pred_global.insert(0, "n", n)
         all_pred_rows.append(df_pred_global)
 
-    # Global CSV with predictions for all n
+    # Global CSV with predictions for all n - makes it easier to check results across all models
     if all_pred_rows:
         df_all = pd.concat(all_pred_rows, ignore_index=True)
         all_csv_path = SUBMIT_DIR / "hidden_predictions_all.csv"

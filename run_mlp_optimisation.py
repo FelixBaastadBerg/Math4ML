@@ -54,12 +54,14 @@ def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
                 d["X"] = p
             else:
                 d["y"] = p
+    # only return pairs where we actually have both X and y
     return {n: d for n, d in variants.items() if d["X"] and d["y"]}
 
 
 def base_mlp_pipeline() -> Pipeline:
     """
-    Current Optimal MLP based on results from run_baselines_selectable.py
+    Starting point for hyperparameter tuning. These are decent defaults that work reasonably well,
+    but we'll vary them during the search.
     """
     return Pipeline([
         ("scaler", StandardScaler()),
@@ -79,6 +81,9 @@ def base_mlp_pipeline() -> Pipeline:
 
 # Search Spaces
 def grid_params() -> dict:
+    """
+    Exhaustive grid for GridSearchCV. This will be slow but thorough.
+    """
     return {
         "clf__hidden_layer_sizes": [(256,128), (256,192), (256,256), (320,256), (384,256)],
         "clf__alpha":              [1e-5, 3e-5, 1e-4],
@@ -91,7 +96,8 @@ def grid_params() -> dict:
 
 def random_distributions() -> dict:
     """
-    Parameter distributions for RandomizedSearchCV
+    Parameter distributions for RandomizedSearchCV. Includes some continuous distributions
+    to explore the space more broadly without being exhaustive.
     """
     hls_choices = [
         (256,128), (256,192), (256,256), (320,256), (384,256),
@@ -108,6 +114,9 @@ def random_distributions() -> dict:
 
 
 def run_grid(X, y, cv, n_jobs, verbose):
+    """
+    Grid search - tries all combinations. Slower but guarantees we don't miss anything.
+    """
     est = base_mlp_pipeline()
     params = grid_params()
     gs = GridSearchCV(est, params, cv=cv_obj, scoring="accuracy", n_jobs=n_jobs, verbose=verbose)
@@ -116,6 +125,10 @@ def run_grid(X, y, cv, n_jobs, verbose):
 
 
 def run_random(X, y, cv, n_jobs, verbose, n_iter):
+    """
+    Random search - faster than grid, samples randomly from the distributions.
+    Good balance between speed and thoroughness.
+    """
     est = base_mlp_pipeline()
     params = random_distributions()
     rs = RandomizedSearchCV(
@@ -133,6 +146,10 @@ def run_random(X, y, cv, n_jobs, verbose, n_iter):
 
 
 def run_bayes(X, y, cv_splits, n_trials, n_jobs):
+    """
+    Bayesian optimization using Optuna. More intelligent than random search since it learns
+    from previous trials. Usually finds good params with fewer evaluations.
+    """
     est = base_mlp_pipeline()
 
     def objective(trial):
@@ -152,9 +169,11 @@ def run_bayes(X, y, cv_splits, n_trials, n_jobs):
         scores = cross_val_score(model, X, y, cv=cv_splits, scoring="accuracy", n_jobs=n_jobs)
         return float(np.mean(scores))
 
+    # Use TPE sampler (Tree-structured Parzen Estimator) - Optuna's default and pretty good
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
     best_params = study.best_params
+    # re-fit on the full training set with best params
     best_est = est.set_params(**best_params).fit(X, y)
     return study.best_value, best_params, best_est
 
@@ -162,10 +181,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("./Datasets/Train_Data"))
     ap.add_argument("--results-root", type=Path, default=Path("./MLP_optimization"))
-    ap.add_argument("--n-list", type=str, default="")
-    ap.add_argument("--folds", type=int, default=5)
-    ap.add_argument("--gs-verbose", type=int, default=0)
-    ap.add_argument("--gs-jobs", type=int, default=-1)
+    ap.add_argument("--n-list", type=str, default="", help="Comma-separated, e.g. 10,12,14")
+    ap.add_argument("--folds", type=int, default=5, help="Cross-validation folds")
+    ap.add_argument("--gs-verbose", type=int, default=0, help="Verbosity for GridSearchCV/RandomizedSearchCV")
+    ap.add_argument("--gs-jobs", type=int, default=-1, help="Parallel jobs (-1 = all cores)")
     ap.add_argument("--search", type=str, default="random", choices=["grid", "random", "bayes"])
     ap.add_argument("--n-trials", type=int, default=40, help="Random search iterations or Optuna trials")
     args = ap.parse_args()
@@ -196,11 +215,14 @@ def main():
         X = np.load(paths["X"])
         y = np.load(paths["y"])
         try:
+            # For regression-like labels, show mean
             print("X shape:", X.shape, " y mean:", f"{float(np.mean(y)):.4f}")
         except Exception:
+            # For classification, show class distribution
             classes, counts = np.unique(y, return_counts=True)
             print("X shape:", X.shape, " classes:", dict(zip(classes.tolist(), counts.tolist())))
 
+        # Run the selected search method
         if args.search == "grid":
             print("  > Grid search near best ...")
             best_score, best_params, best_est = run_grid(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose)
@@ -208,19 +230,20 @@ def main():
             print(f"  > RandomizedSearchCV (n_iter={args.n_trials}) near best ...")
             best_score, best_params, best_est = run_random(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose, n_iter=args.n_trials)
         else: 
+            # Bayesian optimization
             print(f"  > Optuna Bayesian optimization (n_trials={args.n_trials}) near best ...")
             best_score, best_params, best_est = run_bayes(X, y, cv_splits=args.folds, n_trials=args.n_trials, n_jobs=args.gs_jobs)
 
         print(f"    best_acc={best_score:.4f}  best_params={best_params}")
         all_rows.append({"n": n, "model": "MLP", "acc_mean": best_score, "best_params": best_params})
 
-        # Per-n CSV (saved inside method subfolder)
+        # Save per-n results (useful for quick lookup)
         df_n = pd.DataFrame([r for r in all_rows if r["n"] == n]).sort_values("acc_mean", ascending=False)
         out_csv = results_dir / f"results_n{n}.csv"
         df_n.to_csv(out_csv, index=False)
         print(f"  Saved {out_csv}")
 
-    # Combined CSV for the run
+    # Combined CSV for the entire run - makes it easy to compare across all n values
     df_all = pd.DataFrame(all_rows).sort_values(["n", "acc_mean"], ascending=[True, False])
     df_all.to_csv(results_dir / "results_all.csv", index=False)
     print("\n=== Summary ===")

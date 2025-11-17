@@ -57,7 +57,7 @@ def _bin_edges(strategy: str, y_prob: np.ndarray, n_bins: int) -> np.ndarray:
     elif strategy == "quantile":
         qs = np.linspace(0, 1, n_bins + 1)
         edges = np.unique(np.quantile(y_prob, qs))
-        # full coverage
+        # make sure we cover the full range [0, 1]
         edges[0], edges[-1] = 0.0, 1.0
         return edges
     else:
@@ -82,7 +82,7 @@ def calibration_table(
     assert len(y_true) == len(y_prob)
 
     edges = _bin_edges(strategy, y_prob, n_bins)
-    # digitize into bins; 0..n_bins-1
+    # digitize into bins; returns bin indices 0..n_bins-1
     bin_idx = np.digitize(y_prob, edges[1:-1], right=True)
 
     rows = []
@@ -94,6 +94,7 @@ def calibration_table(
         mask = (bin_idx == b)
         count = int(mask.sum())
         if count == 0:
+            # no samples in this bin, skip it
             acc = np.nan
             conf = np.nan
             gap = 0.0
@@ -123,7 +124,7 @@ def calibration_table(
 
 def load_split(root: Path, n: int, split: str) -> Tuple[np.ndarray, np.ndarray]:
     """
-    split = Train_Data, Test_Data
+    Load train or test split. split = 'Train_Data' or 'Test_Data'
     """
     base = root / split
     Xp = base / f"kryptonite-{n}-X-{'train' if split=='Train_Data' else 'test'}.npy"
@@ -136,6 +137,8 @@ def load_split(root: Path, n: int, split: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def make_member(seed: int, best_params: dict) -> Pipeline:
+    """Create a single ensemble member with given hyperparams and random seed"""
+    # strip the 'clf__' prefix since we're passing to MLPClassifier directly
     params_clean = {k.replace("clf__", ""): v for k, v in best_params.items()}
     clf = MLPClassifier(
         **params_clean,
@@ -154,7 +157,8 @@ def make_member(seed: int, best_params: dict) -> Pipeline:
 
 def _fit_one_member(i: int, X: np.ndarray, y: np.ndarray, best_params: dict) -> Tuple[Pipeline, float, int]:
     """
-    Train a single member and return (model, train_seconds, index)
+    Train a single member and return (model, train_seconds, index).
+    Called from parallel job or serial loop.
     """
     member = make_member(SEED + i, best_params)
     t0 = time.perf_counter()
@@ -171,20 +175,23 @@ def fit_ensemble(
     jobs: int
 ) -> Tuple[List[Pipeline], List[float], float]:
     """
-    Timed ensemble fitting emthod
+    Train k ensemble members, either in parallel or serial.
+    Returns list of trained members, individual training times, and total wall-clock time.
     """
     wall_start = time.perf_counter()
     if jobs == 1:
+        # serial training - easier to debug
         members, times = [], []
         for i in range(k):
             m, dt, _ = _fit_one_member(i, X, y, best_params)
             members.append(m)
             times.append(dt)
     else:
+        # parallel training with joblib
         results = Parallel(n_jobs=jobs, verbose=0)(
             delayed(_fit_one_member)(i, X, y, best_params) for i in range(k)
         )
-        # original order by index
+        # restore original order by index since joblib might scramble them
         results.sort(key=lambda t: t[2])
         members = [t[0] for t in results]
         times   = [t[1] for t in results]
@@ -195,7 +202,8 @@ def fit_ensemble(
 
 def ensemble_predict_proba(members: List[Pipeline], X: np.ndarray) -> np.ndarray:
     """
-    Average member probabilities
+    Get ensemble predictions by averaging member probability estimates.
+    Returns shape (n_samples, 2) with [p_0, p_1] for each sample.
     """
     probs = [m.predict_proba(X) for m in members]
     return np.mean(probs, axis=0)
@@ -203,8 +211,9 @@ def ensemble_predict_proba(members: List[Pipeline], X: np.ndarray) -> np.ndarray
 
 def ensemble_disagreement(members: List[Pipeline], X: np.ndarray) -> float:
     """
-    Fraction of samples where not all members agree on the predicted class
-    Close to 0 = more agreement, higher = less robust
+    Fraction of samples where not all members agree on the predicted class.
+    Values close to 0 = more agreement (members are similar), 
+    higher = more disagreement (less robust predictions)
     """
     preds = np.column_stack([m.predict(X) for m in members])  # (n_samples, k)
     disagreed = np.any(preds != preds[:, [0]], axis=1).mean()
@@ -214,8 +223,8 @@ def ensemble_disagreement(members: List[Pipeline], X: np.ndarray) -> float:
 
 def prob_variance(members: List[Pipeline], X: np.ndarray) -> float:
     """
-    Mean variance of the positive-class probabilities across ensemble members
-    Higher variance = more predictive uncertainty
+    Mean variance of the positive-class probabilities across ensemble members.
+    Higher = more predictive uncertainty among members.
     """
     pos = np.column_stack([m.predict_proba(X)[:, 1] for m in members])  # (n_samples, k)
     return float(np.var(pos, axis=1).mean())
@@ -223,7 +232,8 @@ def prob_variance(members: List[Pipeline], X: np.ndarray) -> float:
 
 def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
     """
-    Accuracy, F1, AUC, log loss, Brier, disagreement, prob variance
+    Compute accuracy, F1, AUC, log loss, Brier, disagreement, prob variance.
+    Returns dict with all metrics.
     """
     proba = ensemble_predict_proba(members, X)
     y_pred = (proba[:, 1] >= 0.5).astype(int)
@@ -237,7 +247,7 @@ def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
         "prob_variance": prob_variance(members, X),
         "confusion_matrix": confusion_matrix(y, y_pred).tolist()
     }
-    # AUC is only defined if both classes are present
+    # AUC can fail if only one class is present in the data
     try:
         metrics["roc_auc"] = roc_auc_score(y, proba[:, 1])
     except ValueError:
@@ -247,7 +257,7 @@ def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
 
 def discover_ns(train_root: Path) -> List[int]:
     """
-    Find all n values available in Train_Data
+    Scan the Train_Data folder and find all unique n values available.
     """
     ns = set()
     for p in (train_root / "Train_Data").rglob("kryptonite-*-X-train.npy"):
@@ -256,6 +266,7 @@ def discover_ns(train_root: Path) -> List[int]:
             n = int(name.split("-")[1])
             ns.add(n)
         except Exception:
+            # malformed filename, skip it
             pass
     return sorted(ns)
 
@@ -275,6 +286,7 @@ def main():
     used_jobs = cpu_count() if args.jobs == -1 else args.jobs
     print(f"Using jobs={used_jobs} (cpu_count={cpu_count()})")
 
+    # determine which n values to process
     if args.n_list.strip():
         n_values = [int(x.strip()) for x in args.n_list.split(",") if x.strip()]
     else:
@@ -287,24 +299,25 @@ def main():
             print(f"No best_params available for n={n}. Skipping")
             continue
 
-        # Load data
+        # Load training and test data
         Xtr, ytr = load_split(args.data_root, n, "Train_Data")
         Xte, yte = load_split(args.data_root, n, "Test_Data")
 
-        # Fit ensemble, timed
+        # Train k ensemble members (with timing info)
         members, member_times, wall_time = fit_ensemble(
             Xtr, ytr, BEST_PARAMS[n], args.ensemble_size, jobs=used_jobs
         )
         sum_member_time = float(np.sum(member_times))
         mean_member_time = float(np.mean(member_times))
         std_member_time = float(np.std(member_times))
+        # compute effective speedup: sum of individual times divided by wall-clock time
         speedup = sum_member_time / wall_time if wall_time > 0 else np.nan
 
-        print(f"Timing: wall={wall_time:.2f}s"
-              f"sum(member)={sum_member_time:.2f}s | mean={mean_member_time:.2f}s ± {std_member_time:.2f}s"
+        print(f"Timing: wall={wall_time:.2f}s, "
+              f"sum(member)={sum_member_time:.2f}s | mean={mean_member_time:.2f}s ± {std_member_time:.2f}s, "
               f"eff. speedup≈{speedup:.2f}×")
 
-        # Save members and manifest
+        # Save individual members and metadata
         if not args.skip_save:
             n_dir = args.save_dir / f"n{n}"
             n_dir.mkdir(parents=True, exist_ok=True)
@@ -313,7 +326,7 @@ def main():
                 path = n_dir / f"mlp_member_{i}.joblib"
                 dump(m, path)
                 member_paths.append(str(path))
-            # Save manifest with params & metadata
+            # Save manifest with params & metadata for reproducibility
             manifest = {
                 "n": n,
                 "ensemble_size": args.ensemble_size,
@@ -333,11 +346,11 @@ def main():
             with open(n_dir / "manifest.json", "w") as f:
                 json.dump(manifest, f, indent=2)
 
-        # Evaluate on TRAIN and TEST 
+        # Evaluate on both train and test sets
         train_metrics = evaluate(members, Xtr, ytr)
         test_metrics = evaluate(members, Xte, yte)
 
-        # ECE/MCE on TEST 
+        # Compute calibration metrics on test set
         # Use ensemble average probability for positive class
         proba_test = ensemble_predict_proba(members, Xte)[:, 1]
 
@@ -351,7 +364,7 @@ def main():
         print(f"Test ECE (uniform) = {ece_uniform:.4f}, MCE = {mce_uniform:.4f}")
         print(f"Test ECE (adaptive) = {ece_adapt:.4f}, MCE = {mce_adapt:.4f}")
 
-        # Log 
+        # Print detailed metrics for both sets
         print(f"  Train: acc={train_metrics['accuracy']:.4f}, "
               f"f1={train_metrics['f1']:.4f}, "
               f"auc={train_metrics['roc_auc'] if train_metrics['roc_auc'] is not None else 'NA'}, "
@@ -368,19 +381,20 @@ def main():
               f"disagree={test_metrics['disagreement']:.4f}, "
               f"pvar={test_metrics['prob_variance']:.6f}")
 
+        # Collect results for the summary table
         all_rows.append({
             "n": n,
             "ensemble_size": args.ensemble_size,
             "jobs": used_jobs,
 
-            #timing
+            # timing info
             "wall_train_sec": wall_time,
             "member_time_sum_sec": sum_member_time,
             "member_time_mean_sec": mean_member_time,
             "member_time_std_sec": std_member_time,
             "effective_speedup": speedup,
 
-            # metrics
+            # main metrics
             "train_acc": train_metrics["accuracy"],
             "test_acc": test_metrics["accuracy"],
             "test_f1": test_metrics["f1"],
@@ -390,18 +404,19 @@ def main():
             "test_disagreement": test_metrics["disagreement"],
             "test_prob_variance": test_metrics["prob_variance"],
 
-            # calibration metrics (test)
+            # calibration metrics (on test set)
             "test_ece_uniform": ece_uniform,
             "test_mce_uniform": mce_uniform,
             "test_ece_adaptive": ece_adapt,
             "test_mce_adaptive": mce_adapt,
         })
 
+        # Save per-n results
         n_out_dir = args.save_dir / f"n{n}" if not args.skip_save else args.save_dir
         per_n_df = pd.DataFrame([all_rows[-1]])
         per_n_df.to_csv(n_out_dir / f"timing_and_metrics_n{n}.csv", index=False)
 
-    # Combined CSV
+    # Write combined summary across all n values
     if all_rows:
         df = pd.DataFrame(all_rows).sort_values("n")
         df.to_csv(args.save_dir / "summary_timing_and_metrics.csv", index=False)
