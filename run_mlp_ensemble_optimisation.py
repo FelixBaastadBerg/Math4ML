@@ -25,10 +25,11 @@ import optuna
 
 SEED = 42
 
-"""
-Maps n -> {'X': path, 'y': path}
-"""
+
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
+    """
+    Maps n -> {'X': path, 'y': path}
+    """
     variants: Dict[int, Dict[str, Path]] = {}
     for p in data_dir.rglob("*.npy"):
         name = p.name.lower()
@@ -50,10 +51,11 @@ def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
                 d["y"] = p
     return {n: d for n, d in variants.items() if d["X"] and d["y"]}
 
-"""
-Current Optimal MLP based on results from run_baselines_selectable.py
-"""
+
 def base_mlp_pipeline() -> Pipeline:
+    """
+    Current Optimal MLP based on results from run_baselines_selectable.py
+    """
     return Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -73,10 +75,11 @@ def grid_params() -> dict:
         "clf__learning_rate": ["constant", "adaptive"],
     }
 
-"""
-Parameter distributions for RandomizedSearchCV
-"""
+
 def random_distributions() -> dict:
+    """
+    Parameter distributions for RandomizedSearchCV
+    """
     return {
         "clf__hidden_layer_sizes": [(128,), (256,), (256,128), (512,256)],
         "clf__activation": ["relu", "tanh"],
@@ -133,9 +136,9 @@ def run_bayes(X, y, cv_splits, n_trials, n_jobs):
 
 
 # ---------------- Ensemble training after hyperparameter search ----------------
-"""Build an ensemble of MLPs with the same hyperparameters but different seeds"""
+
 def build_ensemble(best_params: dict, n_estimators: int = 5) -> VotingClassifier:
-    
+    """Build an ensemble of MLPs with the same hyperparameters but different seeds"""
     estimators = []
     for i in range(n_estimators):
         clf = Pipeline([

@@ -20,11 +20,11 @@ for d in (TRAIN_DIR, TEST_DIR, SPLITS_DIR):
 
 detect_x = re.compile(r"^kryptonite-(\d+)-X\.npy$", re.IGNORECASE)
 
-"""
-Find X, Y files
-"""
+
 def find_pairs(base: Path):
-    
+    """
+    Find X, Y files
+    """
     pairs = []
     for name in os.listdir(base):
         m = detect_x.match(name)

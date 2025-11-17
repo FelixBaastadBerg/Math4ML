@@ -23,8 +23,7 @@ from sklearn.metrics import (
 TRAIN_DIR = Path("./Datasets/Train_Data")
 TEST_DIR  = Path("./Datasets/Test_Data")
 
-# which tuning results to use: "random", "grid", or "bayes"
-METHOD = "random"
+METHOD = "random" # which tuning results to use: "random", "grid", or "bayes"
 
 res_dir = Path("./MLP_ECE/MLP_optimization") / METHOD
 per_n = sorted(res_dir.glob("results_n*.csv"))
@@ -54,19 +53,20 @@ def _bin_edges(strategy: str, y_prob: np.ndarray, n_bins: int) -> np.ndarray:
         return edges
     else:
         raise ValueError("strategy must be 'uniform' or 'quantile'")
-"""
-Returns (per-bin DataFrame, ECE, MCE).
-DataFrame columns: ['bin', 'left', 'right', 'count', 'accuracy', 'confidence', 'gap'].
-ECE = sum_w |acc-conf|, MCE = max |acc-conf|.
-"""
+
 def calibration_table(
     y_true: np.ndarray,
     y_prob: np.ndarray,
     n_bins: int = 15,
     strategy: str = "uniform",
 ) -> Tuple[pd.DataFrame, float, float]:
+    """
+    Returns (per-bin DataFrame, ECE, MCE).
+    DataFrame columns: ['bin', 'left', 'right', 'count', 'accuracy', 'confidence', 'gap'].
+    ECE = sum_w |acc-conf|, MCE = max |acc-conf|.
+    """
     
-    assert y_prob.ndim == 1, "y_prob must be 1D probabilities for the positive class"
+    assert y_prob.ndim == 1
     assert len(y_true) == len(y_prob)
 
     edges = _bin_edges(strategy, y_prob, n_bins)
@@ -105,16 +105,17 @@ def calibration_table(
     df_bins = pd.DataFrame(rows)
     return df_bins, float(ece), float(mce)
 
-"""
-Plots reliability diagram: accuracy by bin vs diagonal
-Optionally overlays mean confidence per bin (as points)
-"""
+
 def plot_reliability_diagram(
     df_bins: pd.DataFrame,
     title: str,
     save_path: Path,
     show_confidence: bool = True,
 ):
+    """
+    Plots reliability diagram: accuracy by bin vs diagonal
+    Optionally overlays mean confidence per bin (as points)
+    """
     
     fig, ax = plt.subplots(figsize=(5.2, 4.3))
     # Bin centers for plotting
@@ -146,18 +147,16 @@ def plot_reliability_diagram(
 def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
-"""Replace np.float64(1.23e-5) with 1.23e-5 in a string representation"""
 def clean_np_floats(s: str) -> str:
-    
+    """Replace np.float64(1.23e-5) with 1.23e-5 in a string representation"""
     return re.sub(r"np\.float64\(([^)]+)\)", r"\1", s)
 
 
-"""
-Reads results_all.csv and returns { n: best_params_dict }
-Handles stringified dicts and cleans np.float64(...) wrappers
-"""
+
 def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
-    
+    """
+    Reads data and returns { n: best_params_dict }
+    """
     assert results_csv.exists(), f"Missing results CSV: {results_csv}"
     df = pd.read_csv(results_csv)
     out = {}
@@ -185,12 +184,12 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
 # Accept files like the kryptonite.npy files
 _PAT = re.compile(r"^kryptonite-(\d+)-([xy])-(train|test)\.npy$", re.IGNORECASE)
 
-"""
-Scan dir_path for kryptonite-n-(x|y)-<expected_split>.npy 
-Return { n: {'X': Path or None, 'y': Path or None} }
-"""
+
 def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Path]]:
-    
+    """
+    Scan dir_path for kryptonite-n-(x|y)-<expected_split>.npy 
+    Return { n: {'X': Path or None, 'y': Path or None} }
+    """
     idx: Dict[int, Dict[str, Path]] = {}
     for p in dir_path.rglob("*.npy"):
         m = _PAT.match(p.name)
@@ -208,11 +207,12 @@ def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Pat
             d["y"] = p
     return idx
 
-"""
-Find matching train/test pairs by n
-Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four exist
-"""
+
 def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[str, Path]]:
+    """
+    Find matching train/test pairs by n
+    Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four exist
+    """
     tr = _index_split(train_dir, "train")
     te = _index_split(test_dir,  "test")
 
@@ -226,11 +226,11 @@ def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[st
     return pairs
 
 
-"""
-Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
-Keeps robust defaults (max_iter, early_stopping)
-"""
 def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
+    """
+    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
+    Keeps robust defaults (max_iter, early_stopping)
+    """
     pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -288,7 +288,7 @@ for n, paths in pairs.items():
     except Exception:
         pass
 
-    # --- Calibration (Reliability diagrams and ECE/MCE) ---
+    # Calibration (Reliability diagrams and ECE/MCE)
     ece_uniform = mce_uniform = None
     ece_adapt = mce_adapt = None
 
@@ -319,7 +319,7 @@ for n, paths in pairs.items():
             "y_pred": y_pred.astype(int),
             "y_prob": proba.astype(float)
         }).to_csv(out_dir / "per_sample_predictions.csv", index=False)
-    # --- Calibration (Reliability diagrams and ECE/MCE) END ---
+    # Calibration END
 
 
     # Metrics
@@ -419,7 +419,6 @@ for n, paths in pairs.items():
 
 print("\nDone evaluating all datasets.")
 
-# Summary
 df_summary = pd.DataFrame(summary_rows).sort_values("n")
 print(df_summary)
 

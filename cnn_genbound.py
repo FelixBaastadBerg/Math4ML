@@ -98,7 +98,6 @@ def compute_cnn_gen_bound(
     conv_kernel_sizes = []
     for layer in model.layers:
         if isinstance(layer, layers.Conv1D):
-            # kernel_size is a tuple like (k,)
             conv_kernel_sizes.append(int(layer.kernel_size[0]))
 
     if len(conv_kernel_sizes) == 0:
@@ -127,7 +126,6 @@ def compute_cnn_gen_bound(
     # Σ_i |x_{ij}|^2 over rows, then max over j (features)
     z_term = float(np.max(np.sum(np.square(X_train), axis=0)))
 
-    # First term
     term1 = (
         2.0
         * np.sqrt(2.0)
@@ -137,7 +135,6 @@ def compute_cnn_gen_bound(
         * np.sqrt(product_k * z_term)
     )
 
-    # Second term
     term2 = 3.0 * np.sqrt(
         np.log(2.0 * (rho + 2.0) ** 2 / delta) / (2.0 * m)
     )
@@ -151,37 +148,20 @@ def compute_cnn_gen_bound(
 
 def make_best_cnn_1d(
     input_dim: int,
-    filters1: int = 200,   # 32
-    filters2: int = 200,   # 64
-    dense_units: int = 128,  # 128
-    dropout: float = 0.0,  # 0.5
-    lr: float = 3e-4,      # 3e-4
-    kernel_size: int = 2,  # 2
-    lambda_l2: float = 5e-3,  # 5e-3
+    filters1: int = 200,
+    filters2: int = 200,
+    dense_units: int = 128, 
+    dropout: float = 0.0, 
+    lr: float = 3e-4,      
+    kernel_size: int = 2, 
+    lambda_l2: float = 5e-3,  
 ) -> keras.Model:
     """
     Build the 2-layer 1D CNN with one hidden Dense layer and a single-unit
     sigmoid output, using the best hyperparameters you found.
-
-    Architecture:
-        Input (flat, n_features)
-        -> Reshape to (n_features, 1)
-        -> Conv1D(filters1, kernel_size, relu)
-        -> Conv1D(filters2, kernel_size, relu)
-        -> Flatten
-        -> Dropout (if > 0)
-        -> Dense(dense_units, relu)
-        -> Dense(1, sigmoid)  # full last classification layer (binary)
     """
     inputs = keras.Input(shape=(input_dim,))
     x = layers.Reshape((input_dim, 1))(inputs)
-
-    """
-    x = layers.Conv1D(filters1, kernel_size=kernel_size, padding="same",
-                      activation="relu", kernel_regularizer=regularizers.l2(lambda_l2))(x)
-    x = layers.Conv1D(filters2, kernel_size=kernel_size, padding="same",
-                      activation="relu", kernel_regularizer=regularizers.l2(lambda_l2))(x)
-    """
 
     x = layers.Conv1D(
         filters1,
@@ -283,8 +263,6 @@ class GenBoundLogger(keras.callbacks.Callback):
       - test (validation) accuracy
       - generalization bound for the current weights
     and stores them in self.records.
-
-    After training, you can turn this into a DataFrame and save to CSV.
     """
 
     def __init__(self, X_train_scaled, num_classes, gamma=1.0, delta=1e-3):
@@ -308,7 +286,6 @@ class GenBoundLogger(keras.callbacks.Callback):
             delta=self.delta,
         )
 
-        # Store for later
         self.records.append(
             {
                 "epoch": epoch + 1,
@@ -318,7 +295,6 @@ class GenBoundLogger(keras.callbacks.Callback):
             }
         )
 
-        # Also print to console
         print(
             f"[Epoch {epoch+1:02d}] "
             f"train_acc={train_acc:.4f} "

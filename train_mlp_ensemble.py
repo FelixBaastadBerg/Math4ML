@@ -4,7 +4,6 @@ Train and evaluate an ensemble of MLPs on Kryptonite-n datasets.
 """
 
 from pathlib import Path
-from turtle import speed
 from typing import Dict, List, Tuple
 import argparse
 import json
@@ -13,7 +12,7 @@ import time
 
 import numpy as np
 import pandas as pd
-from joblib import dump, load, Parallel, delayed, cpu_count
+from joblib import dump, Parallel, delayed, cpu_count
 
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -22,7 +21,6 @@ from sklearn.metrics import (
     accuracy_score, f1_score, roc_auc_score, log_loss, brier_score_loss,
     confusion_matrix
 )
-from sklearn.model_selection import cross_val_score
 
 SEED = 42
 
@@ -49,12 +47,11 @@ BEST_PARAMS: Dict[int, dict] = {
 }
 
 # ---------------- Calibration helpers (ECE / MCE) ----------------
-"""
-- uniform: fixed-width bins over [0,1]
-- adaptive: equal-mass bins based on y_prob distribution
-"""
 def _bin_edges(strategy: str, y_prob: np.ndarray, n_bins: int) -> np.ndarray:
-    
+    """
+    - uniform: fixed-width bins over [0,1]
+    - adaptive: equal-mass bins based on y_prob distribution
+    """
     if strategy == "uniform":
         return np.linspace(0.0, 1.0, n_bins + 1)
     elif strategy == "quantile":
@@ -67,19 +64,19 @@ def _bin_edges(strategy: str, y_prob: np.ndarray, n_bins: int) -> np.ndarray:
         raise ValueError("strategy must be 'uniform' or 'quantile'")
 
 
-"""
-Compute per-bin calibration stats + ECE/MCE
 
-ECE = sum_b (n_b / N) * |acc_b - conf_b|
-MCE = max_b |acc_b - conf_b|
-"""
 def calibration_table(
     y_true: np.ndarray,
     y_prob: np.ndarray,
     n_bins: int = 15,
     strategy: str = "uniform",
 ) -> Tuple[pd.DataFrame, float, float]:
+    """
+    Compute per-bin calibration stats + ECE/MCE
 
+    ECE = sum_b (n_b / N) * |acc_b - conf_b|
+    MCE = max_b |acc_b - conf_b|
+    """
     
     assert y_prob.ndim == 1, "y_prob must be 1D probabilities for the positive class"
     assert len(y_true) == len(y_prob)
@@ -123,10 +120,11 @@ def calibration_table(
 
 # ---------------- Utilities ----------------
 
-"""
-split = Train_Data, Test_Data
-"""
+
 def load_split(root: Path, n: int, split: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    split = Train_Data, Test_Data
+    """
     base = root / split
     Xp = base / f"kryptonite-{n}-X-{'train' if split=='Train_Data' else 'test'}.npy"
     yp = base / f"kryptonite-{n}-y-{'train' if split=='Train_Data' else 'test'}.npy"
@@ -138,7 +136,6 @@ def load_split(root: Path, n: int, split: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def make_member(seed: int, best_params: dict) -> Pipeline:
-    # No "clf__" because we set params later
     params_clean = {k.replace("clf__", ""): v for k, v in best_params.items()}
     clf = MLPClassifier(
         **params_clean,
@@ -154,19 +151,18 @@ def make_member(seed: int, best_params: dict) -> Pipeline:
     ])
     return pipe
 
-"""
-Train a single member and return (model, train_seconds, index)
-"""
+
 def _fit_one_member(i: int, X: np.ndarray, y: np.ndarray, best_params: dict) -> Tuple[Pipeline, float, int]:
+    """
+    Train a single member and return (model, train_seconds, index)
+    """
     member = make_member(SEED + i, best_params)
     t0 = time.perf_counter()
     member.fit(X, y)
     dt = time.perf_counter() - t0
     return member, dt, i
 
-"""
-Timed ensemble fitting emthod
-"""
+
 def fit_ensemble(
     X: np.ndarray,
     y: np.ndarray,
@@ -174,6 +170,9 @@ def fit_ensemble(
     k: int,
     jobs: int
 ) -> Tuple[List[Pipeline], List[float], float]:
+    """
+    Timed ensemble fitting emthod
+    """
     wall_start = time.perf_counter()
     if jobs == 1:
         members, times = [], []
@@ -193,36 +192,39 @@ def fit_ensemble(
     return members, times, wall_elapsed
 
 
-"""
-Average member probabilities
-"""
+
 def ensemble_predict_proba(members: List[Pipeline], X: np.ndarray) -> np.ndarray:
+    """
+    Average member probabilities
+    """
     probs = [m.predict_proba(X) for m in members]
     return np.mean(probs, axis=0)
 
-"""
-Fraction of samples where not all members agree on the predicted class
-Close to 0 = more agreement, higher = less robust
-"""
+
 def ensemble_disagreement(members: List[Pipeline], X: np.ndarray) -> float:
+    """
+    Fraction of samples where not all members agree on the predicted class
+    Close to 0 = more agreement, higher = less robust
+    """
     preds = np.column_stack([m.predict(X) for m in members])  # (n_samples, k)
     disagreed = np.any(preds != preds[:, [0]], axis=1).mean()
     return float(disagreed)
 
 
-"""
-Mean variance of the positive-class probabilities across ensemble members
-Higher variance = more predictive uncertainty
-"""
+
 def prob_variance(members: List[Pipeline], X: np.ndarray) -> float:
+    """
+    Mean variance of the positive-class probabilities across ensemble members
+    Higher variance = more predictive uncertainty
+    """
     pos = np.column_stack([m.predict_proba(X)[:, 1] for m in members])  # (n_samples, k)
     return float(np.var(pos, axis=1).mean())
 
-"""
-Accuracy, F1, AUC, log loss, Brier, disagreement, prob variance
-"""
+
 def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
-    
+    """
+    Accuracy, F1, AUC, log loss, Brier, disagreement, prob variance
+    """
     proba = ensemble_predict_proba(members, X)
     y_pred = (proba[:, 1] >= 0.5).astype(int)
 
@@ -242,10 +244,11 @@ def evaluate(members: List[Pipeline], X: np.ndarray, y: np.ndarray) -> dict:
         metrics["roc_auc"] = None
     return metrics
 
-"""
-Find all n values available in Train_Data
-"""
+
 def discover_ns(train_root: Path) -> List[int]:
+    """
+    Find all n values available in Train_Data
+    """
     ns = set()
     for p in (train_root / "Train_Data").rglob("kryptonite-*-X-train.npy"):
         name = p.name.lower()
@@ -272,7 +275,6 @@ def main():
     used_jobs = cpu_count() if args.jobs == -1 else args.jobs
     print(f"Using jobs={used_jobs} (cpu_count={cpu_count()})")
 
-    # Which n's to process??
     if args.n_list.strip():
         n_values = [int(x.strip()) for x in args.n_list.split(",") if x.strip()]
     else:
@@ -395,7 +397,6 @@ def main():
             "test_mce_adaptive": mce_adapt,
         })
 
-        # per-n CSV (optional)
         n_out_dir = args.save_dir / f"n{n}" if not args.skip_save else args.save_dir
         per_n_df = pd.DataFrame([all_rows[-1]])
         per_n_df.to_csv(n_out_dir / f"timing_and_metrics_n{n}.csv", index=False)

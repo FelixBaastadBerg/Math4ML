@@ -37,8 +37,7 @@ DATA_ROOT = Path("./Datasets")
 SUBMIT_DIR = Path("./Hidden_Kryptonite_Submission")
 SUBMIT_DIR.mkdir(parents=True, exist_ok=True)
 
-# which tuning results to use: "random", "grid", or "bayes"
-METHOD = "random"
+METHOD = "random" # which tuning results to use: "random", "grid", or "bayes"
 RESULTS_CSV = Path(f"./MLP_ECE/MLP_optimization/{METHOD}/results_all.csv")
 
 SEED = 45
@@ -46,16 +45,16 @@ SEED = 45
 
 # ---------------- Utilities for loading best hyperparameters ----------------
 
-"""Replace np.float64(1.23e-5) with 1.23e-5 in a string representation."""
 def clean_np_floats(s: str) -> str:
+    """Replace np.float64(1.23e-5) with 1.23e-5 in a string representation."""
     return re.sub(r"np\.float64\(([^)]+)\)", r"\1", s)
 
 
-"""
-Reads results_all.csv and returns { n: best_params_dict }
-"""
+
 def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
-    
+    """
+    Reads results_all.csv and returns { n: best_params_dict }
+    """
     assert results_csv.exists(), f"Missing results CSV: {results_csv}"
     df = pd.read_csv(results_csv)
     out: Dict[int, Dict[str, Any]] = {}
@@ -73,7 +72,6 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
-        # hidden_layer sizes must be tuple
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -81,11 +79,11 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         out[n] = params
     return out
 
-"""
-Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
-"""
+
 def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
-    
+    """
+    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
+    """
     pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -110,15 +108,15 @@ _FULL_PAT = re.compile(r"^kryptonite-(\d+)-([xy])\.npy$", re.IGNORECASE)
 _HIDDEN_PAT = re.compile(r"^hidden-kryptonite-(\d+)-x\.npy$", re.IGNORECASE)
 
 
-"""
-Discover full labelled datasets
-    kryptonite-n-X.npy
-    kryptonite-n-y.npy
 
-Returns { n: {"X": Path, "y": Path} } for n where both exist
-"""
 def discover_full_labelled(data_root: Path) -> Dict[int, Dict[str, Path]]:
-    
+    """
+    Discover full labelled datasets
+        kryptonite-n-X.npy
+        kryptonite-n-y.npy
+
+    Returns { n: {"X": Path, "y": Path} } for n where both exist
+    """
     idx: Dict[int, Dict[str, Path]] = {}
     for p in data_root.rglob("kryptonite-*-*.npy"):
         m = _FULL_PAT.match(p.name)
@@ -232,7 +230,6 @@ def main():
         df_pred.to_csv(csv_path, index=False)
         print(f"  Saved hidden predictions -> {csv_path}")
 
-        # Manifest
         manifest = {
             "n": n,
             "model_path": str(model_path),

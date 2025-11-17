@@ -18,14 +18,11 @@ from sklearn.metrics import log_loss, accuracy_score
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 
-# Silence sklearn convergence warnings
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-# Directory with kryptonite-n-x-train.npy / kryptonite-n-y-train.npy
 TRAIN_DIR = Path("./Datasets/Train_Data")
 
-# which tuning results to use: "random", "grid", or "bayes"
-METHOD = "random"
+METHOD = "random" # which tuning results to use: "random", "grid", or "bayes"
 
 # Where hyperparameter tuning results live
 res_dir = Path("./MLP_optimization") / METHOD
@@ -58,8 +55,7 @@ def clean_np_floats(s: str) -> str:
 
 def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
     """
-    Reads results_all.csv and returns { n: best_params_dict }.
-    Handles stringified dicts and cleans np.float64(...) wrappers.
+    Reads data and returns { n: best_params_dict }.
     """
     assert results_csv.exists(), f"Missing results CSV: {results_csv}"
     df = pd.read_csv(results_csv)
@@ -80,7 +76,6 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
-        # Be safe: convert hidden_layer_sizes list -> tuple if needed
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -122,7 +117,6 @@ def discover_train_sets(train_dir: Path) -> Dict[int, Dict[str, Path]]:
 def build_base_pipeline(best_params: Dict[str, Any]) -> Pipeline:
     """
     Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied.
-    We'll override max_iter and warm_start when doing epoch-wise CV training.
     """
     pipe = Pipeline(
         [
@@ -136,7 +130,6 @@ def build_base_pipeline(best_params: Dict[str, Any]) -> Pipeline:
             ),
         ]
     )
-    # Apply tuned hyperparameters (they are in the sklearn "set_params" format)
     pipe.set_params(**best_params)
 
     # Make sure solver works with warm_start:
@@ -160,13 +153,13 @@ def compute_cv_val_curves(
 ) -> (List[float], List[float], List[float]):
     """
     Perform Stratified K-Fold cross-validation on (X, y) and
-    compute the mean TRAIN loss, VALIDATION loss (log loss),
+    compute the mean TRAIN loss, VALIDATION loss,
     and VALIDATION accuracy across folds for each epoch.
 
     Returns:
-        mean_train_loss: list of mean training log losses per epoch
-        mean_val_loss:   list of mean validation log losses per epoch
-        mean_val_acc:    list of mean validation accuracies per epoch
+        mean_train_loss
+        mean_val_loss
+        mean_val_acc
     """
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
     all_fold_train_losses: List[List[float]] = []
@@ -193,20 +186,16 @@ def compute_cv_val_curves(
         for epoch in range(1, max_epochs + 1):
             pipe.fit(X_tr, y_tr)  # continues training due to warm_start
 
-            # Training predictions (for training loss)
             y_tr_proba = pipe.predict_proba(X_tr)
             train_loss = log_loss(y_tr, y_tr_proba, labels=unique_labels)
             fold_train_losses.append(train_loss)
 
-            # Validation predictions
             y_val_proba = pipe.predict_proba(X_val)
             y_val_pred = pipe.predict(X_val)
 
-            # Validation log loss
             val_loss = log_loss(y_val, y_val_proba, labels=unique_labels)
             fold_val_losses.append(val_loss)
 
-            # Validation accuracy
             acc = accuracy_score(y_val, y_val_pred)
             fold_accs.append(acc)
 
@@ -214,7 +203,6 @@ def compute_cv_val_curves(
         all_fold_val_losses.append(fold_val_losses)
         all_fold_accs.append(fold_accs)
 
-    # Convert to arrays and average across folds
     train_losses_arr = np.array(all_fold_train_losses)
     val_losses_arr = np.array(all_fold_val_losses)
     accs_arr = np.array(all_fold_accs)
@@ -336,7 +324,6 @@ def run_single_n16(best_by_n, train_sets):
     plt.close()
     print(f"Saved: {path2}")
 
-    # (Optional) Adam vs SGD comparison, if you still want it:
     print("\nRunning Adam vs SGD comparison again...")
     compare_optimizers_for_n16(X, y, best_params)
 

@@ -28,7 +28,7 @@ Outputs:
   - If --export-hidden, predictions to ./hiddenlabels/y_predicted_{n}.npy
 """
 from pathlib import Path
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -46,10 +46,11 @@ from tqdm.auto import tqdm
 
 SEED = 42
 
-"""
-Return mapping n -> {'X': path, 'y': path, 'X_hidden': path or None}
-"""
+
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
+    """
+    Return mapping n -> {'X': path, 'y': path, 'X_hidden': path or None}
+    """
     variants = {}
     for p in data_dir.rglob("*.npy"):
         name = p.name.lower()
@@ -77,10 +78,11 @@ def cv_grid(model, param_grid, X, y, cv=5, n_jobs=-1, verbose=0):
     return gs
 
 
-"""
-Return mapping key -> (pretty_name, estimator, param_grid)
-"""
+
 def build_all_searches() -> Dict[str, Tuple[str, object, dict]]:
+    """
+    Return mapping key -> (pretty_name, estimator, param_grid)
+    """
     searches = {}
 
     searches["logreg"] = (

@@ -30,11 +30,11 @@ SEED = 45
 
 cv_obj = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
-"""
-Maps n -> {'X': path, 'y': path}
-"""
+
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
-    
+    """
+    Maps n -> {'X': path, 'y': path}
+    """
     variants: Dict[int, Dict[str, Path]] = {} 
     for p in data_dir.rglob("*.npy"):
         name = p.name.lower()
@@ -56,10 +56,11 @@ def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
                 d["y"] = p
     return {n: d for n, d in variants.items() if d["X"] and d["y"]}
 
-"""
-Current Optimal MLP based on results from run_baselines_selectable.py
-"""
+
 def base_mlp_pipeline() -> Pipeline:
+    """
+    Current Optimal MLP based on results from run_baselines_selectable.py
+    """
     return Pipeline([
         ("scaler", StandardScaler()),
         ("clf", MLPClassifier(
@@ -87,10 +88,11 @@ def grid_params() -> dict:
         "clf__activation":         ["relu", "tanh"],
     }
 
-"""
-Parameter distributions for RandomizedSearchCV
-"""
+
 def random_distributions() -> dict:
+    """
+    Parameter distributions for RandomizedSearchCV
+    """
     hls_choices = [
         (256,128), (256,192), (256,256), (320,256), (384,256),
         (256,), (384,), (256,256,128)
@@ -205,7 +207,7 @@ def main():
         elif args.search == "random":
             print(f"  > RandomizedSearchCV (n_iter={args.n_trials}) near best ...")
             best_score, best_params, best_est = run_random(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose, n_iter=args.n_trials)
-        else:  # bayes
+        else: 
             print(f"  > Optuna Bayesian optimization (n_trials={args.n_trials}) near best ...")
             best_score, best_params, best_est = run_bayes(X, y, cv_splits=args.folds, n_trials=args.n_trials, n_jobs=args.gs_jobs)
 
