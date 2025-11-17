@@ -43,3 +43,9 @@ n ∈ {10,12,14,16,18,20}.
 ├── split_kryptonite_test.py            # (Optional) helper for dataset splitting
 ├── train_mlp_ensemble.py               # Train & evaluate MLP ensembles + uncertainty
 └── train_mlp_hidden_submission.py      # Train MLP on full dataset and generate labels for hidden Kryptonite-n datasets
+
+```
+
+# Models
+## CNN
+The cnn code is ran from the file "cnn_genbound.py". The current code is optimized for n = 10, which will generate a file where the gen bound decreases to 0.4 with 0.9635 in accuracy. Run "python cnn_genbound.py" to see the accuracy and the genBound update. It is currently using batch norm, learning rate scheduler and very high L2 loss. 
