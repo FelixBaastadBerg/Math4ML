@@ -44,6 +44,7 @@ n ∈ {10,12,14,16,18,20}.
 ├── train_mlp_ensemble.py               # Train & evaluate MLP ensembles + uncertainty
 └── train_mlp_hidden_submission.py      # Train MLP on full dataset and generate labels for hidden Kryptonite-n datasets
 
+```
 
 # Models
 ## CNN
