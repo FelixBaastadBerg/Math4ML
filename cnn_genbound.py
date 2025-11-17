@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-The script:
+The code:
 1. Loads kryptonite-10-X.npy and kryptonite-10-Y.npy
 2. Splits into train/test
 3. Scales inputs with StandardScaler
@@ -8,8 +8,7 @@ The script:
 5. Writes logs to a CSV file
 
 Usage:
-    python cnn_genbound.py --data-dir ./Datasets \
-        --epochs 40 --batch-size 64 --log-file genbound_log.csv
+    python cnn_genbound.py --data-dir ./Datasets --epochs 40 --batch-size 64 --log-file genbound_log.csv
 """
 
 from pathlib import Path
