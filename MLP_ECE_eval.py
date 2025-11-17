@@ -1,4 +1,4 @@
-# Evaluation: Train on Train_Data, Test on Test_Data for each n
+# Evaluation: train on Train_Data, test on Test_Data for each n
 import os
 import re
 import ast

@@ -1,0 +1,19 @@
+{
+  "n": 16,
+  "model_path": "Hidden_Kryptonite_Submission/n16/mlp_model.joblib",
+  "hidden_X_path": "Datasets/hidden-kryptonite-16-X.npy",
+  "hidden_pred_npy": "Hidden_Kryptonite_Submission/n16/hidden_predictions.npy",
+  "hidden_pred_csv": "Hidden_Kryptonite_Submission/n16/hidden_predictions.csv",
+  "num_hidden_samples": 10000,
+  "best_params": {
+    "clf__activation": "tanh",
+    "clf__alpha": 5.4992730415708444e-05,
+    "clf__batch_size": 64,
+    "clf__hidden_layer_sizes": [
+      256,
+      128
+    ],
+    "clf__learning_rate": "constant",
+    "clf__learning_rate_init": 0.0008068900014622218
+  }
+}

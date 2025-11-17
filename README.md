@@ -23,6 +23,7 @@ n in {10,12,14,16,18,20}.
 .
 ├── Convergence_Analysis/        # Outputs for training curve analysis
 ├── Datasets/                    # Kryptonite-n data (Train_Data / Test_Data)
+├── Hidden_Kryptonite_Submission/   # Submission labels for hidden Kryptonite-n datasets
 ├── Initial_Exploration/         # Notebooks from initial exploration of dataset along with figures
 ├── MLP_ECE/                     # Saved Single-MLP calibration results, plots, evaluation metrics, and hyperparameter search results
 ├── MLP_ensemble_optimization/   # Ensemble hyperparameter search results
@@ -39,4 +40,5 @@ n in {10,12,14,16,18,20}.
 ├── run_mlp_ensemble_optimisation.py  # Hyperparameter tuning for ensemble MLPs
 ├── run_mlp_optimisation.py      # Hyperparameter tuning for single MLPs
 ├── split_kryptonite_test.py     # (Optional) helper for dataset splitting
-└── train_mlp_ensemble.py        # Train & evaluate MLP ensembles + uncertainty
+├── train_mlp_ensemble.py        # Train & evaluate MLP ensembles + uncertainty
+└── train_mlp_hidden_submission.py  # Train MLP on full dataset and generate labels for hidden Kryptonite-n datasets
