@@ -12,7 +12,7 @@ TEST_DIR   = DATA_DIR / "Test_Data"
 SPLITS_DIR = DATA_DIR / "Splits"
 
 TEST_SIZE  = 0.20 # 20% test
-SEED       = 45
+SEED       = 42
 OVERWRITE  = False # Set to True if you need to regenerate splits (careful, this deletes old ones)
 
 for d in (TRAIN_DIR, TEST_DIR, SPLITS_DIR):
