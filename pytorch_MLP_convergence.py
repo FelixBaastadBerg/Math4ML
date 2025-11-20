@@ -13,9 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 
-plt.rcParams.update({'font.size': 10})
-
-
+plt.rcParams.update({'font.size': 20})
 
 N_EPOCHS = 100
 PATIENCE = 50  

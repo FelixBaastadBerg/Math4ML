@@ -17,11 +17,14 @@ PATIENCE = 50
 MIN_DELTA = 1e-3
 
 N_VALUES = [10, 12, 14, 16, 18, 20]
+
 CSV_HPARAMS = "./MLP_ECE/MLP_optimization/random/results_all.csv"
 TRAIN_DATA_PATH = "./Datasets/Train_Data"
 TEST_DATA_PATH = "./Datasets/Test_Data"
-VAL_SUMMARY_CSV = "pytorch_val_summary.csv"  
+HIDDEN_DATA_PATH = "./Datasets"               
+VAL_SUMMARY_CSV = "pytorch_val_summary.csv"
 OUTPUT_DIR = "PyTorch_Test_Results"
+SUBMISSION_DIR = "Kryptonite_Label_Submission"  
 
 
 class MLP(nn.Module):
@@ -51,7 +54,6 @@ class MLP(nn.Module):
         return self.net(x)
 
 
-
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
     running_loss = 0.0
@@ -71,6 +73,9 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
 
 def evaluate(model, loader, criterion, device):
+    """
+    Returns avg_loss and accuracy using BCE logits
+    """
     model.eval()
     total_loss = 0.0
     correct = 0
@@ -86,7 +91,6 @@ def evaluate(model, loader, criterion, device):
             preds = (probs > 0.5).float()
             correct += (preds == yb).sum().item()
 
-
     avg_loss = total_loss / len(loader.dataset)
     accuracy = correct / len(loader.dataset)
     return avg_loss, accuracy
@@ -94,7 +98,7 @@ def evaluate(model, loader, criterion, device):
 
 def parse_params(row):
     """
-    Get hyperparameters from results_all.csv - added dropout after convergence analysis
+    Convert params from CSV (sklearn random search output) to pytorch format
     """
     raw = row["best_params"]
     dropout = float(row["dropout"])
@@ -116,7 +120,6 @@ def parse_params(row):
         "hidden_sizes": hidden_sizes,
         "dropout": dropout,
     }
-
 
 
 def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
@@ -153,11 +156,7 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
     ).to(device)
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=params["lr"],
-        weight_decay=params["alpha"]
-    )
+    optimizer = optim.Adam(model.parameters(), lr=params["lr"], weight_decay=params["alpha"])
 
     best_val_loss = float("inf")
     best_state = None
@@ -175,7 +174,6 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
             epochs_no_improve += 1
 
         if epochs_no_improve >= patience:
-            print(f"  Early stopping full-train at epoch {epoch+1}")
             break
 
     if best_state is not None:
@@ -183,25 +181,39 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
 
     test_loss, test_acc = evaluate(model, test_loader, criterion, device)
 
-    return test_loss, test_acc
+    # return model + scaler to use for hidden data
+    return test_loss, test_acc, model, scaler
+
+
+def predict_hidden_labels(model, scaler, hidden_X):
+    hidden_scaled = scaler.transform(hidden_X)
+    Xh_t = torch.tensor(hidden_scaled, dtype=torch.float32)
+
+    with torch.no_grad():
+        logits = model(Xh_t)
+        probs = torch.sigmoid(logits).cpu().numpy().ravel()
+        preds = (probs > 0.5).astype(int)
+
+    return preds, probs
+
 
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(SUBMISSION_DIR, exist_ok=True)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # load val summary from convergence script
-    val_summary = pd.read_csv(VAL_SUMMARY_CSV)
-    val_summary = val_summary.set_index("n")
+    df_val = pd.read_csv(VAL_SUMMARY_CSV).set_index("n")
 
-    test_rows = []
+    results = []
 
     for n in N_VALUES:
         df = pd.read_csv(CSV_HPARAMS)
         row = df[df.n == n].iloc[0]
         params = parse_params(row)
 
-        print(f"\n===== Final train + test for n={n} =====")
+        print(f"\nFinal train + test for n={n}")
         print("Parameters:", params)
 
         X_train = np.load(f"{TRAIN_DATA_PATH}/kryptonite-{n}-x-train.npy")
@@ -209,45 +221,33 @@ def main():
         X_test  = np.load(f"{TEST_DATA_PATH}/kryptonite-{n}-x-test.npy")
         y_test  = np.load(f"{TEST_DATA_PATH}/kryptonite-{n}-y-test.npy")
 
-        test_loss, test_acc = train_full_and_test(
-            X_train, y_train, X_test, y_test, params, device, epochs=N_EPOCHS
+        # train model 
+        test_loss, test_acc, model, scaler = train_full_and_test(
+            X_train, y_train, X_test, y_test, params, device
         )
 
-        val_best = float(val_summary.loc[n, "val_acc_best"])
-        val_final = float(val_summary.loc[n, "val_acc_final"])
+        print(f"Test accuracy: {test_acc:.4f}")
 
-        print(f"n={n}  Test Acc={test_acc:.4f}  Val Best={val_best:.4f}  Val Final={val_final:.4f}")
+        # generate hidden labels
+        hidden_path = os.path.join(HIDDEN_DATA_PATH, f"hidden-kryptonite-{n}-X.npy")
+        if os.path.exists(hidden_path):
+            hidden_X = np.load(hidden_path)
+            preds, probs = predict_hidden_labels(model, scaler, hidden_X)
 
-        test_rows.append({
+            save_path = os.path.join(SUBMISSION_DIR, f"hidden-kryptonite-{n}-Y.npy")
+            np.save(save_path, preds)
+            print(f"Saved hidden labels for n={n} → {save_path}")
+        else:
+            print(f"(No hidden dataset for n={n}, skipping label generation.)")
+
+        results.append({
             "n": n,
-            "val_acc_best": val_best,
-            "val_acc_final": val_final,
-            "test_acc": float(test_acc)
+            "test_acc": float(test_acc),
         })
 
-    test_df = pd.DataFrame(test_rows)
-    test_df.to_csv(os.path.join(OUTPUT_DIR, "pytorch_test_results.csv"), index=False)
-    print(f"\nSaved test results to {os.path.join(OUTPUT_DIR, 'pytorch_test_results.csv')}")
-
-    # plot val vs test accuracy
-    plt.figure(figsize=(8, 5))
-    xs = [str(r["n"]) for r in test_rows]
-    val_best = [r["val_acc_best"] for r in test_rows]
-    test_accs = [r["test_acc"] for r in test_rows]
-
-    plt.plot(xs, val_best, marker="o", label="Best Validation Accuracy")
-    plt.plot(xs, test_accs, marker="s", label="Test Accuracy")
-    plt.xlabel("n (number of features)")
-    plt.ylabel("Accuracy")
-    plt.title("Validation vs Test Accuracy per n")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plot_path = os.path.join(OUTPUT_DIR, "val_vs_test_accuracy.png")
-    plt.savefig(plot_path, dpi=300)
-    plt.close()
-
-    print(f"Saved val vs test accuracy plot to {plot_path}")
+    # save summary
+    pd.DataFrame(results).to_csv(os.path.join(OUTPUT_DIR, "pytorch_test_results.csv"), index=False)
+    print("\nSaved summary to pytorch_test_results.csv")
 
 
 if __name__ == "__main__":
