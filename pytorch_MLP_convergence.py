@@ -13,12 +13,15 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 
+plt.rcParams.update({'font.size': 10})
+
+
 
 N_EPOCHS = 100
-PATIENCE = 50 
+PATIENCE = 50  
 MIN_DELTA = 1e-3 
 
-N_VALUES = [10, 12, 14, 16, 18, 20]
+N_VALUES = [10,12,14,16,18,20]
 CSV_HPARAMS = "./MLP_ECE/MLP_optimization/random/results_all.csv"
 TRAIN_DATA_PATH = "./Datasets/Train_Data"
 OUTPUT_DIR = "PyTorch_Convergence" 
@@ -26,7 +29,7 @@ VAL_SUMMARY_CSV = "pytorch_val_summary.csv"
 
 
 class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_sizes, activation, dropout, num_classes=10):
+    def __init__(self, input_dim, hidden_sizes, activation, dropout, num_classes=1):
         super().__init__()
 
         layers = []
@@ -81,7 +84,10 @@ def evaluate(model, loader, criterion, device):
             loss = criterion(logits, yb)
 
             total_loss += loss.item() * xb.size(0)
-            correct += (logits.argmax(dim=1) == yb).sum().item()
+
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+            correct += (preds == yb).sum().item()
 
     avg_loss = total_loss / len(loader.dataset)
     accuracy = correct / len(loader.dataset)
@@ -95,10 +101,13 @@ def compute_accuracy(model, loader, device):
     with torch.no_grad():
         for xb, yb in loader:
             xb, yb = xb.to(device), yb.to(device)
-            preds = model(xb).argmax(dim=1)
+            logits = model(xb)
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
             correct += (preds == yb).sum().item()
             total += yb.size(0)
     return correct / total
+
 
 
 def parse_params(row):
@@ -147,9 +156,10 @@ def run_5fold_cv(X, y, params, device,
         X_val_fold   = scaler.transform(X_val_fold)
 
         X_train_t = torch.tensor(X_train_fold, dtype=torch.float32)
-        y_train_t = torch.tensor(y_train_fold, dtype=torch.long)
-        X_val_t   = torch.tensor(X_val_fold, dtype=torch.float32)
-        y_val_t   = torch.tensor(y_val_fold, dtype=torch.long)
+        y_train_t = torch.tensor(y_train_fold, dtype=torch.float32).unsqueeze(1)
+        X_val_t   = torch.tensor(X_val_fold,   dtype=torch.float32)
+        y_val_t   = torch.tensor(y_val_fold,   dtype=torch.float32).unsqueeze(1)
+
 
         train_loader = DataLoader(
             TensorDataset(X_train_t, y_train_t),
@@ -169,7 +179,7 @@ def run_5fold_cv(X, y, params, device,
             dropout=params["dropout"]
         ).to(device)
 
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(
             model.parameters(),
             lr=params["lr"],

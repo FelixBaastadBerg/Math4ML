@@ -25,7 +25,7 @@ OUTPUT_DIR = "PyTorch_Test_Results"
 
 
 class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_sizes, activation, dropout, num_classes=10):
+    def __init__(self, input_dim, hidden_sizes, activation, dropout, num_classes=1):
         super().__init__()
 
         layers = []
@@ -82,7 +82,10 @@ def evaluate(model, loader, criterion, device):
             loss = criterion(logits, yb)
 
             total_loss += loss.item() * xb.size(0)
-            correct += (logits.argmax(dim=1) == yb).sum().item()
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+            correct += (preds == yb).sum().item()
+
 
     avg_loss = total_loss / len(loader.dataset)
     accuracy = correct / len(loader.dataset)
@@ -124,9 +127,9 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
     X_test  = scaler.transform(X_test)
 
     X_train_t = torch.tensor(X_train, dtype=torch.float32)
-    y_train_t = torch.tensor(y_train, dtype=torch.long)
+    y_train_t = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
     X_test_t  = torch.tensor(X_test, dtype=torch.float32)
-    y_test_t  = torch.tensor(y_test, dtype=torch.long)
+    y_test_t  = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
     train_ds = TensorDataset(X_train_t, y_train_t)
     test_ds  = TensorDataset(X_test_t, y_test_t)
@@ -149,7 +152,7 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
         dropout=params["dropout"]
     ).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(
         model.parameters(),
         lr=params["lr"],
