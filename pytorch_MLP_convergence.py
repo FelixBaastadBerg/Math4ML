@@ -26,6 +26,7 @@ CSV_HPARAMS = "./MLP_ECE/MLP_optimization/random/results_all.csv"
 TRAIN_DATA_PATH = "./Datasets/Train_Data"
 OUTPUT_DIR = "PyTorch_Convergence" 
 VAL_SUMMARY_CSV = "pytorch_val_summary.csv" 
+# Just to commit again
 
 
 class MLP(nn.Module):
