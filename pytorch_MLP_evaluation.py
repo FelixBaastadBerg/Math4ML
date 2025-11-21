@@ -24,7 +24,7 @@ N_VALUES = [10, 12, 14, 16, 18, 20]
 CSV_HPARAMS = "./MLP_ECE/MLP_optimization/random/results_all.csv"
 TRAIN_DATA_PATH = "./Datasets/Train_Data"
 TEST_DATA_PATH = "./Datasets/Test_Data"
-HIDDEN_DATA_PATH = "./Datasets"                
+HIDDEN_DATA_PATH = "./Datasets"
 VAL_SUMMARY_CSV = "pytorch_val_summary.csv"
 OUTPUT_DIR = "PyTorch_Test_Results"
 SUBMISSION_DIR = "Kryptonite_Label_Submission"
@@ -124,6 +124,7 @@ def parse_params(row):
         "dropout": dropout,
     }
 
+
 def compute_ece(y_true, y_prob, n_bins=15, strategy="uniform"):
     """
     Computes expected calibration error (ECE) with either uniform or adaptive bins
@@ -137,7 +138,7 @@ def compute_ece(y_true, y_prob, n_bins=15, strategy="uniform"):
         # Uniform binning
         bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
     else:
-        # Adaptive binning
+        # Adaptive (quantile-based) binning
         quantiles = np.linspace(0.0, 1.0, n_bins + 1)
         bin_edges = np.unique(np.quantile(y_prob, quantiles))
         if bin_edges[0] > 0.0:
@@ -169,6 +170,44 @@ def compute_ece(y_true, y_prob, n_bins=15, strategy="uniform"):
         rows, columns=["bin", "left", "right", "count", "acc", "conf", "gap"]
     )
     return float(ece), df
+
+
+def plot_reliability_diagram(df, ece, n, strategy, out_dir):
+    """
+    Plot a reliability diagram from the ECE bin dataframe
+    """
+
+    df_nonempty = df[df["count"] > 0].copy()
+    if df_nonempty.empty:
+        print(f"Warning: no non-empty bins for n={n}, strategy={strategy}; skipping plot.")
+        return
+
+    acc = df_nonempty["acc"].values
+    conf = df_nonempty["conf"].values
+
+    plt.figure(figsize=(6, 5))
+
+    plt.plot([0, 1], [0, 1], "--", color="gray", label="Perfect Calibration")
+
+    plt.plot(conf, acc, marker="o", linestyle="-", label="Empirical Accuracy")
+
+    plt.plot(conf, conf, marker="s", linestyle="--", label="Mean Confidence")
+
+    plt.xlim(0.0, 1.0)
+    plt.ylim(0.0, 1.0)
+    plt.xlabel("Predicted Probability")
+    plt.ylabel("Accuracy")
+    plt.title(f"Kryptonite-{n} {strategy.capitalize()} ECE\nECE={ece:.4f}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+
+    fname = f"kryptonite_{n}_ece_{strategy}.png"
+    path = os.path.join(out_dir, fname)
+    plt.savefig(path, dpi=300)
+    plt.close()
+    print(f"Saved {strategy} reliability diagram for n={n} to {path}")
+
 
 def train_full_and_test(
     X_train,
@@ -242,7 +281,7 @@ def train_full_and_test(
             epochs_no_improve += 1
 
         if epochs_no_improve >= patience:
-            print(f"  Early stopping full-train at epoch {epoch+1}")
+            print(f"Early stopping full-train at epoch {epoch+1}")
             break
 
     if best_state is not None:
@@ -258,7 +297,7 @@ def train_full_and_test(
         for xb, yb in test_loader:
             xb = xb.to(device)
             logits = model(xb)
-            probs = torch.sigmoid(logits).cpu().numpy()  # (batch, 1)
+            probs = torch.sigmoid(logits).cpu().numpy() 
             all_probs.append(probs)
             all_y.append(yb.numpy())
 
@@ -266,7 +305,6 @@ def train_full_and_test(
     all_y = np.vstack(all_y).ravel()
 
     return test_loss, test_acc, all_y, all_probs, model, scaler
-
 
 
 def predict_hidden_labels(model, scaler, hidden_X):
@@ -316,24 +354,32 @@ def main():
             X_train, y_train, X_test, y_test, params, device, epochs=N_EPOCHS
         )
 
-        # ECE on test set
-        ece_uniform, _ = compute_ece(
+        # ECE on test set 
+        ece_uniform, df_uniform = compute_ece(
             y_true_test, y_prob_test, n_bins=15, strategy="uniform"
         )
-        ece_adapt, _ = compute_ece(
+        ece_adapt, df_adapt = compute_ece(
             y_true_test, y_prob_test, n_bins=15, strategy="adaptive"
+        )
+
+        # reliability diagrams 
+        plot_reliability_diagram(
+            df_uniform, ece_uniform, n, strategy="uniform", out_dir=OUTPUT_DIR
+        )
+        plot_reliability_diagram(
+            df_adapt, ece_adapt, n, strategy="adaptive", out_dir=OUTPUT_DIR
         )
 
         val_best = float(val_summary.loc[n, "val_acc_best"])
         val_final = float(val_summary.loc[n, "val_acc_final"])
 
         print(
-            f"n={n} Test Acc={test_acc:.4f}"
-            f"Val Best={val_best:.4f} Val Final={val_final:.4f}"
-            f"ECE_u={ece_uniform:.4f} ECE_a={ece_adapt:.4f}"
+            f"n={n} Test Acc={test_acc:.4f} "
+            f"Val Best={val_best:.4f} Val Final={val_final:.4f} "
+            f"ECE_u={ece_uniform:.4f} ECE_a={ece_adapt:.4f} "
         )
 
-        # Hidden label generation
+        # hidden labels
         hidden_path = os.path.join(HIDDEN_DATA_PATH, f"hidden-kryptonite-{n}-X.npy")
         if os.path.exists(hidden_path):
             hidden_X = np.load(hidden_path)
@@ -342,7 +388,7 @@ def main():
                 SUBMISSION_DIR, f"hidden-kryptonite-{n}-Y.npy"
             )
             np.save(save_path, preds)
-            print(f"Saved hidden labels for n={n} → {save_path}")
+            print(f"Saved hidden labels for n={n} to {save_path}")
         else:
             print(f"(No hidden dataset for n={n}, skipping label generation.)")
 
@@ -357,7 +403,7 @@ def main():
             }
         )
 
-    # Save overall test/ECE summary
+    # save overall test/ECE summary
     test_df = pd.DataFrame(test_rows)
     results_csv = os.path.join(OUTPUT_DIR, "pytorch_test_results.csv")
     test_df.to_csv(results_csv, index=False)
