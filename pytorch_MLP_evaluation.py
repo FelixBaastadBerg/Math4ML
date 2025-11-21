@@ -12,6 +12,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 
+
+# Configurations
+
 N_EPOCHS = 100
 PATIENCE = 50
 MIN_DELTA = 1e-3
@@ -21,10 +24,10 @@ N_VALUES = [10, 12, 14, 16, 18, 20]
 CSV_HPARAMS = "./MLP_ECE/MLP_optimization/random/results_all.csv"
 TRAIN_DATA_PATH = "./Datasets/Train_Data"
 TEST_DATA_PATH = "./Datasets/Test_Data"
-HIDDEN_DATA_PATH = "./Datasets"               
+HIDDEN_DATA_PATH = "./Datasets"                
 VAL_SUMMARY_CSV = "pytorch_val_summary.csv"
 OUTPUT_DIR = "PyTorch_Test_Results"
-SUBMISSION_DIR = "Kryptonite_Label_Submission"  
+SUBMISSION_DIR = "Kryptonite_Label_Submission"
 
 
 class MLP(nn.Module):
@@ -74,7 +77,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
 def evaluate(model, loader, criterion, device):
     """
-    Returns avg_loss and accuracy using BCE logits
+    Returns avg_loss, accuracy
     """
     model.eval()
     total_loss = 0.0
@@ -98,7 +101,7 @@ def evaluate(model, loader, criterion, device):
 
 def parse_params(row):
     """
-    Convert params from CSV (sklearn random search output) to pytorch format
+    Convert params from results_all.csv (sklearn random search output) to pytorch format
     """
     raw = row["best_params"]
     dropout = float(row["dropout"])
@@ -121,42 +124,107 @@ def parse_params(row):
         "dropout": dropout,
     }
 
+def compute_ece(y_true, y_prob, n_bins=15, strategy="uniform"):
+    """
+    Computes expected calibration error (ECE) with either uniform or adaptive bins
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    y_prob = np.asarray(y_prob, dtype=float).ravel()
 
-def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
-                        epochs=N_EPOCHS, patience=PATIENCE, min_delta=MIN_DELTA):
+    assert y_true.shape == y_prob.shape, "y_true and y_prob must have same shape"
 
+    if strategy == "uniform":
+        # Uniform binning
+        bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    else:
+        # Adaptive binning
+        quantiles = np.linspace(0.0, 1.0, n_bins + 1)
+        bin_edges = np.unique(np.quantile(y_prob, quantiles))
+        if bin_edges[0] > 0.0:
+            bin_edges[0] = 0.0
+        if bin_edges[-1] < 1.0:
+            bin_edges[-1] = 1.0
+
+    bin_ids = np.digitize(y_prob, bin_edges[1:-1])
+
+    ece = 0.0
+    rows = []
+    n = len(y_true)
+
+    for b in range(len(bin_edges) - 1):
+        mask = (bin_ids == b)
+        count = int(mask.sum())
+        if count == 0:
+            rows.append([b, bin_edges[b], bin_edges[b + 1], 0, np.nan, np.nan, 0.0])
+            continue
+
+        acc = float(y_true[mask].mean())
+        conf = float(y_prob[mask].mean())
+        gap = abs(acc - conf)
+        ece += (count / n) * gap
+
+        rows.append([b, bin_edges[b], bin_edges[b + 1], count, acc, conf, gap])
+
+    df = pd.DataFrame(
+        rows, columns=["bin", "left", "right", "count", "acc", "conf", "gap"]
+    )
+    return float(ece), df
+
+def train_full_and_test(
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+    params,
+    device,
+    epochs=N_EPOCHS,
+    patience=PATIENCE,
+    min_delta=MIN_DELTA,
+):
+    """
+    Train with early stopping on validation split then evaluate on test
+    """
     scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test  = scaler.transform(X_test)
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-    X_train_t = torch.tensor(X_train, dtype=torch.float32)
+    X_train_t = torch.tensor(X_train_scaled, dtype=torch.float32)
     y_train_t = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
-    X_test_t  = torch.tensor(X_test, dtype=torch.float32)
-    y_test_t  = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
+    X_test_t = torch.tensor(X_test_scaled, dtype=torch.float32)
+    y_test_t = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
     train_ds = TensorDataset(X_train_t, y_train_t)
-    test_ds  = TensorDataset(X_test_t, y_test_t)
+    test_ds = TensorDataset(X_test_t, y_test_t)
 
     n_train = X_train_t.shape[0]
     val_size = max(int(0.1 * n_train), 1)
     train_size = n_train - val_size
+
     train_subset, val_subset = torch.utils.data.random_split(
         train_ds, [train_size, val_size], generator=torch.Generator().manual_seed(42)
     )
 
-    train_loader_es = DataLoader(train_subset, batch_size=params["batch_size"], shuffle=True)
-    val_loader_es   = DataLoader(val_subset,   batch_size=params["batch_size"], shuffle=False)
-    test_loader     = DataLoader(test_ds,      batch_size=params["batch_size"], shuffle=False)
+    train_loader_es = DataLoader(
+        train_subset, batch_size=params["batch_size"], shuffle=True
+    )
+    val_loader_es = DataLoader(
+        val_subset, batch_size=params["batch_size"], shuffle=False
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=params["batch_size"], shuffle=False
+    )
 
     model = MLP(
         input_dim=X_train.shape[1],
         hidden_sizes=params["hidden_sizes"],
         activation=params["activation"],
-        dropout=params["dropout"]
+        dropout=params["dropout"],
     ).to(device)
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=params["lr"], weight_decay=params["alpha"])
+    optimizer = optim.Adam(
+        model.parameters(), lr=params["lr"], weight_decay=params["alpha"]
+    )
 
     best_val_loss = float("inf")
     best_state = None
@@ -174,6 +242,7 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
             epochs_no_improve += 1
 
         if epochs_no_improve >= patience:
+            print(f"  Early stopping full-train at epoch {epoch+1}")
             break
 
     if best_state is not None:
@@ -181,8 +250,23 @@ def train_full_and_test(X_train, y_train, X_test, y_test, params, device,
 
     test_loss, test_acc = evaluate(model, test_loader, criterion, device)
 
-    # return model + scaler to use for hidden data
-    return test_loss, test_acc, model, scaler
+    # collect probabilities and labels for ECE
+    model.eval()
+    all_probs = []
+    all_y = []
+    with torch.no_grad():
+        for xb, yb in test_loader:
+            xb = xb.to(device)
+            logits = model(xb)
+            probs = torch.sigmoid(logits).cpu().numpy()  # (batch, 1)
+            all_probs.append(probs)
+            all_y.append(yb.numpy())
+
+    all_probs = np.vstack(all_probs).ravel()
+    all_y = np.vstack(all_y).ravel()
+
+    return test_loss, test_acc, all_y, all_probs, model, scaler
+
 
 
 def predict_hidden_labels(model, scaler, hidden_X):
@@ -197,16 +281,16 @@ def predict_hidden_labels(model, scaler, hidden_X):
     return preds, probs
 
 
-
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(SUBMISSION_DIR, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    df_val = pd.read_csv(VAL_SUMMARY_CSV).set_index("n")
+    # load validation summary from convergence script
+    val_summary = pd.read_csv(VAL_SUMMARY_CSV).set_index("n")
 
-    results = []
+    test_rows = []
 
     for n in N_VALUES:
         df = pd.read_csv(CSV_HPARAMS)
@@ -218,36 +302,86 @@ def main():
 
         X_train = np.load(f"{TRAIN_DATA_PATH}/kryptonite-{n}-x-train.npy")
         y_train = np.load(f"{TRAIN_DATA_PATH}/kryptonite-{n}-y-train.npy")
-        X_test  = np.load(f"{TEST_DATA_PATH}/kryptonite-{n}-x-test.npy")
-        y_test  = np.load(f"{TEST_DATA_PATH}/kryptonite-{n}-y-test.npy")
+        X_test = np.load(f"{TEST_DATA_PATH}/kryptonite-{n}-x-test.npy")
+        y_test = np.load(f"{TEST_DATA_PATH}/kryptonite-{n}-y-test.npy")
 
-        # train model 
-        test_loss, test_acc, model, scaler = train_full_and_test(
-            X_train, y_train, X_test, y_test, params, device
+        (
+            test_loss,
+            test_acc,
+            y_true_test,
+            y_prob_test,
+            model,
+            scaler,
+        ) = train_full_and_test(
+            X_train, y_train, X_test, y_test, params, device, epochs=N_EPOCHS
         )
 
-        print(f"Test accuracy: {test_acc:.4f}")
+        # ECE on test set
+        ece_uniform, _ = compute_ece(
+            y_true_test, y_prob_test, n_bins=15, strategy="uniform"
+        )
+        ece_adapt, _ = compute_ece(
+            y_true_test, y_prob_test, n_bins=15, strategy="adaptive"
+        )
 
-        # generate hidden labels
+        val_best = float(val_summary.loc[n, "val_acc_best"])
+        val_final = float(val_summary.loc[n, "val_acc_final"])
+
+        print(
+            f"n={n} Test Acc={test_acc:.4f}"
+            f"Val Best={val_best:.4f} Val Final={val_final:.4f}"
+            f"ECE_u={ece_uniform:.4f} ECE_a={ece_adapt:.4f}"
+        )
+
+        # Hidden label generation
         hidden_path = os.path.join(HIDDEN_DATA_PATH, f"hidden-kryptonite-{n}-X.npy")
         if os.path.exists(hidden_path):
             hidden_X = np.load(hidden_path)
             preds, probs = predict_hidden_labels(model, scaler, hidden_X)
-
-            save_path = os.path.join(SUBMISSION_DIR, f"hidden-kryptonite-{n}-Y.npy")
+            save_path = os.path.join(
+                SUBMISSION_DIR, f"hidden-kryptonite-{n}-Y.npy"
+            )
             np.save(save_path, preds)
             print(f"Saved hidden labels for n={n} → {save_path}")
         else:
             print(f"(No hidden dataset for n={n}, skipping label generation.)")
 
-        results.append({
-            "n": n,
-            "test_acc": float(test_acc),
-        })
+        test_rows.append(
+            {
+                "n": n,
+                "val_acc_best": val_best,
+                "val_acc_final": val_final,
+                "test_acc": float(test_acc),
+                "ece_uniform": float(ece_uniform),
+                "ece_adaptive": float(ece_adapt),
+            }
+        )
 
-    # save summary
-    pd.DataFrame(results).to_csv(os.path.join(OUTPUT_DIR, "pytorch_test_results.csv"), index=False)
-    print("\nSaved summary to pytorch_test_results.csv")
+    # Save overall test/ECE summary
+    test_df = pd.DataFrame(test_rows)
+    results_csv = os.path.join(OUTPUT_DIR, "pytorch_test_results.csv")
+    test_df.to_csv(results_csv, index=False)
+    print(f"\nSaved test results to {results_csv}")
+
+    # plot val vs test accuracy
+    plt.figure(figsize=(8, 5))
+    xs = [str(r["n"]) for r in test_rows]
+    val_best = [r["val_acc_best"] for r in test_rows]
+    test_accs = [r["test_acc"] for r in test_rows]
+
+    plt.plot(xs, val_best, marker="o", label="Best Validation Accuracy")
+    plt.plot(xs, test_accs, marker="s", label="Test Accuracy")
+    plt.xlabel("n (number of features)")
+    plt.ylabel("Accuracy")
+    plt.title("Validation vs Test Accuracy per n")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plot_path = os.path.join(OUTPUT_DIR, "val_vs_test_accuracy.png")
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+
+    print(f"Saved val vs test accuracy plot to {plot_path}")
 
 
 if __name__ == "__main__":
