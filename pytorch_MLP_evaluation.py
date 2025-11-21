@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
-
+from sklearn.model_selection import train_test_split
 
 # Configurations
 
@@ -221,38 +221,51 @@ def train_full_and_test(
     min_delta=MIN_DELTA,
 ):
     """
-    Train with early stopping on validation split then evaluate on test
+    Train with early stopping on a STRATIFIED validation split,
+    using a StandardScaler fit ONLY on the training split,
+    then evaluate on test.
     """
+    # 1) Stratified split on RAW (unscaled) training data
+    X_tr_np, X_val_np, y_tr_np, y_val_np = train_test_split(
+        X_train,
+        y_train,
+        test_size=0.1,
+        random_state=42,
+        stratify=y_train,
+    )
+
+    # 2) Fit scaler ONLY on the training split, then transform val + test
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
+    X_tr_scaled = scaler.fit_transform(X_tr_np)
+    X_val_scaled = scaler.transform(X_val_np)
     X_test_scaled = scaler.transform(X_test)
 
-    X_train_t = torch.tensor(X_train_scaled, dtype=torch.float32)
-    y_train_t = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
+    # 3) Convert to tensors
+    X_tr_t = torch.tensor(X_tr_scaled, dtype=torch.float32)
+    y_tr_t = torch.tensor(y_tr_np, dtype=torch.float32).unsqueeze(1)
+
+    X_val_t = torch.tensor(X_val_scaled, dtype=torch.float32)
+    y_val_t = torch.tensor(y_val_np, dtype=torch.float32).unsqueeze(1)
+
     X_test_t = torch.tensor(X_test_scaled, dtype=torch.float32)
     y_test_t = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
-    train_ds = TensorDataset(X_train_t, y_train_t)
+    # 4) Build datasets and loaders
+    train_ds = TensorDataset(X_tr_t, y_tr_t)
+    val_ds = TensorDataset(X_val_t, y_val_t)
     test_ds = TensorDataset(X_test_t, y_test_t)
 
-    n_train = X_train_t.shape[0]
-    val_size = max(int(0.1 * n_train), 1)
-    train_size = n_train - val_size
-
-    train_subset, val_subset = torch.utils.data.random_split(
-        train_ds, [train_size, val_size], generator=torch.Generator().manual_seed(42)
-    )
-
     train_loader_es = DataLoader(
-        train_subset, batch_size=params["batch_size"], shuffle=True
+        train_ds, batch_size=params["batch_size"], shuffle=True
     )
     val_loader_es = DataLoader(
-        val_subset, batch_size=params["batch_size"], shuffle=False
+        val_ds, batch_size=params["batch_size"], shuffle=False
     )
     test_loader = DataLoader(
         test_ds, batch_size=params["batch_size"], shuffle=False
     )
 
+    # 5) Model, loss, optimizer
     model = MLP(
         input_dim=X_train.shape[1],
         hidden_sizes=params["hidden_sizes"],
@@ -265,6 +278,7 @@ def train_full_and_test(
         model.parameters(), lr=params["lr"], weight_decay=params["alpha"]
     )
 
+    # 6) Early stopping on validation loss
     best_val_loss = float("inf")
     best_state = None
     epochs_no_improve = 0
@@ -287,9 +301,10 @@ def train_full_and_test(
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    # 7) Final evaluation on TEST set
     test_loss, test_acc = evaluate(model, test_loader, criterion, device)
 
-    # collect probabilities and labels for ECE
+    # 8) Collect probs + labels for ECE (on test)
     model.eval()
     all_probs = []
     all_y = []
@@ -297,7 +312,7 @@ def train_full_and_test(
         for xb, yb in test_loader:
             xb = xb.to(device)
             logits = model(xb)
-            probs = torch.sigmoid(logits).cpu().numpy() 
+            probs = torch.sigmoid(logits).cpu().numpy()
             all_probs.append(probs)
             all_y.append(yb.numpy())
 
@@ -305,6 +320,7 @@ def train_full_and_test(
     all_y = np.vstack(all_y).ravel()
 
     return test_loss, test_acc, all_y, all_probs, model, scaler
+
 
 
 def predict_hidden_labels(model, scaler, hidden_X):

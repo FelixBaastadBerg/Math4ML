@@ -5,7 +5,7 @@ import re
 import os
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 import torch
@@ -137,19 +137,22 @@ def parse_params(row):
 
 def run_5fold_cv(X, y, params, device,
                  epochs=N_EPOCHS, patience=PATIENCE, min_delta=MIN_DELTA):
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    # Use stratified folds so each fold preserves class balance
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
     train_losses_all = []
     val_losses_all = []
     val_acc_all = []
     train_acc_all = []
 
-    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X)):
+    # NOTE: pass both X and y to .split for stratification by y
+    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(X, y)):
         print(f"Running Fold {fold_idx+1}...")
 
         X_train_fold, y_train_fold = X[train_idx], y[train_idx]
-        X_val_fold, y_val_fold     = X[val_idx], y[val_idx]
+        X_val_fold,   y_val_fold   = X[val_idx], y[val_idx]
 
+        # Per-fold scaler: fit ONLY on X_train_fold, then transform X_val_fold
         scaler = StandardScaler()
         X_train_fold = scaler.fit_transform(X_train_fold)
         X_val_fold   = scaler.transform(X_val_fold)
@@ -158,7 +161,6 @@ def run_5fold_cv(X, y, params, device,
         y_train_t = torch.tensor(y_train_fold, dtype=torch.float32).unsqueeze(1)
         X_val_t   = torch.tensor(X_val_fold,   dtype=torch.float32)
         y_val_t   = torch.tensor(y_val_fold,   dtype=torch.float32).unsqueeze(1)
-
 
         train_loader = DataLoader(
             TensorDataset(X_train_t, y_train_t),
@@ -213,6 +215,7 @@ def run_5fold_cv(X, y, params, device,
                 print(f"  Early stopping on fold {fold_idx+1} at epoch {epoch+1}")
                 break
 
+        # Pad to full length for averaging
         last_tl = train_loss_curve[-1]
         last_vl = val_loss_curve[-1]
         last_va = val_acc_curve[-1]
@@ -234,6 +237,7 @@ def run_5fold_cv(X, y, params, device,
         np.mean(val_acc_all,     axis=0),
         np.mean(train_acc_all,   axis=0),
     )
+
 
 
 def run_convergence_for_n(n, device):
