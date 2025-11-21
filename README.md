@@ -81,14 +81,19 @@ python split_kryptonite_test.py
 ## Repository structure
 
 ```text
-.
 ├── Convergence_Analysis/               # Outputs for training curve analysis
 ├── Datasets/                           # Kryptonite-n data (Train_Data / Test_Data)
+    ├── Splits/                         # Indices of splits
+    ├── Test_Data/                      # Testing data
+    ├── Train_Data/                     # Training data
 ├── Initial_Exploration/                # Notebooks from initial exploration of dataset along with figures
 ├── Kryptonite_Label_Submission/        # Submission labels for hidden Kryptonite-n datasets
 ├── Misc Artifacts/                     # Additional artifacts
-├── MLP_ECE/                            # Saved single MLP hyperparameter search results (code structure depends on internal MLP_optimization/ and random/ files)
+├── MLP_ECE/                            # Saved single MLP hyperparameter search results
+    ├── MLP_optimization                # code structure depends on MLP_optimization/
+        ├── random                      # code structure depends on random/
 ├── MLP_ensemble_optimization/          # Ensemble hyperparameter search results
+    ├── random                          # code structure depends on random/
 ├── trained_mlp_ensembles/              # Saved ensemble members, manifests, evaluation metrics, and results
 ├── cnn_genbound.py                     # Generalisation bounds for CNN models 
 ├── draw_chart_for_mlp.py               # Chart showing singular MLP accuracies with Hoeffding bounds 
