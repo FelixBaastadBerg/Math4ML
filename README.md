@@ -84,8 +84,9 @@ python split_kryptonite_test.py
 .
 ├── Convergence_Analysis/               # Outputs for training curve analysis
 ├── Datasets/                           # Kryptonite-n data (Train_Data / Test_Data)
-├── Kryptonite_Label_Submission/        # Submission labels for hidden Kryptonite-n datasets
 ├── Initial_Exploration/                # Notebooks from initial exploration of dataset along with figures
+├── Kryptonite_Label_Submission/        # Submission labels for hidden Kryptonite-n datasets
+├── Misc Artifacts/                     # Additional artifacts
 ├── MLP_ECE/                            # Saved single MLP hyperparameter search results (code structure depends on internal MLP_optimization/ and random/ files)
 ├── MLP_ensemble_optimization/          # Ensemble hyperparameter search results
 ├── trained_mlp_ensembles/              # Saved ensemble members, manifests, evaluation metrics, and results

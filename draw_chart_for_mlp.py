@@ -1,18 +1,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+
+# Output directory
+OUTPUT_DIR = "Misc Artifacts"
+os.makedirs(OUTPUT_DIR, exist_ok=True) 
 
 # data
 # MLP test accuracies
-mlp_acc = np.array([0.957, 0.966, 0.963, 0.945, 0.935, 0.939])
+mlp_acc = np.array([0.957, 0.967, 0.965, 0.964, 0.960, 0.971])
+
+
 
 # Hoeffding confidence intervals: [lower, upper]
 hoeffding_ci = np.array([
     [0.931, 0.983],
-    [0.943, 0.989],
-    [0.941, 0.985],
-    [0.925, 0.965],
-    [0.916, 0.954],
-    [0.921, 0.957],
+    [0.944, 0.990],
+    [0.943, 0.987],
+    [0.944, 0.984],
+    [0.941, 0.979],
+    [0.953, 0.989],
 ])
 ci_lower = hoeffding_ci[:, 0]
 ci_upper = hoeffding_ci[:, 1]
@@ -33,12 +40,12 @@ plt.figure(figsize=(6, 4))
 plt.plot(x, mlp_acc, marker="o", linestyle="-", label="MLP accuracy")
 
 # Threshold
-plt.plot(x, threshold, marker="o", linestyle="-", label="Threshold")
+plt.plot(x, threshold, marker="o", linestyle="-", label="Threshold", color="red")
 
 # Hoeffding CI band
 plt.fill_between(x, ci_lower, ci_upper, alpha=0.15, label="Hoeffding CI")
 
-# Optional: lower/upper CI outlines
+# Optional lower/upper CI outlines
 plt.plot(x, ci_lower, linestyle="--", linewidth=1)
 plt.plot(x, ci_upper, linestyle="--", linewidth=1)
 
@@ -52,7 +59,8 @@ plt.legend()
 plt.tight_layout()
 
 # save
-plt.savefig("mlp_hoeffding_threshold_plot.png", dpi=300, bbox_inches="tight")
+save_path = os.path.join(OUTPUT_DIR, "mlp_hoeffding_threshold_plot.png")
+plt.savefig(save_path, dpi=300, bbox_inches="tight")
 plt.close()
 
-print("Saved figure as mlp_hoeffding_threshold_plot.png")
+print(f"Saved figure to {save_path}")
