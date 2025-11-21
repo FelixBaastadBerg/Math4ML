@@ -37,10 +37,6 @@ Finding hyperparameters for singular MLPs:
 ```
 python run_mlp_optimisation.py --search grid
 ```
-Finding hyperparameters for ensemble MLPs: 
-```
-python run_mlp_ensemble_optimisation.py --search grid
-```
 
 
 ## MLP ensemble
@@ -81,7 +77,6 @@ python split_kryptonite_test.py
 ## Repository structure
 
 ```text
-├── Convergence_Analysis/               # Outputs for training curve analysis
 ├── Datasets/                           # Kryptonite-n data (Train_Data / Test_Data)
     ├── Splits/                         # Indices of splits
     ├── Test_Data/                      # Testing data
@@ -94,6 +89,8 @@ python split_kryptonite_test.py
         ├── random                      # code structure depends on random/
 ├── MLP_ensemble_optimization/          # Ensemble hyperparameter search results
     ├── random                          # code structure depends on random/
+├── PyTorch_Convergence                 # Graphs showing loss and accuracy of MLPs
+├── PyTorch_Test_Results                # ECE graphs + test_results + validation vs test accuracy graph
 ├── trained_mlp_ensembles/              # Saved ensemble members, manifests, evaluation metrics, and results
 ├── cnn_genbound.py                     # Generalisation bounds for CNN models 
 ├── draw_chart_for_mlp.py               # Chart showing singular MLP accuracies with Hoeffding bounds 

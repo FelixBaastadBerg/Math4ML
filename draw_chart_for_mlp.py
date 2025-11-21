@@ -10,8 +10,6 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # MLP test accuracies
 mlp_acc = np.array([0.957, 0.967, 0.965, 0.964, 0.960, 0.971])
 
-
-
 # Hoeffding confidence intervals: [lower, upper]
 hoeffding_ci = np.array([
     [0.931, 0.983],
@@ -27,8 +25,8 @@ ci_upper = hoeffding_ci[:, 1]
 # Threshold values
 threshold = np.array([0.94, 0.93, 0.92, 0.91, 0.80, 0.75])
 
-# x-axis: experiment index 1..6
-x = np.arange(1, len(mlp_acc) + 1)
+# x-axis: experiment index 10, 12, 14, 16, 18, 20
+x = np.array([10, 12, 14, 16, 18, 20])
 
 # Set font size to 10
 plt.rcParams.update({'font.size': 10})
