@@ -14,32 +14,32 @@ We performed the following:
 - train final **single MLP** to generate labels for hidden Kryptonite-n dataset for submission
 
 All experiments are run on the Kryptonite-n datasets for  
-n ∈ {10,12,14,16,18,20}.
+n ∈ {10,12,14,16,18,20}
 
 ---
 
 # Models
 
 ## MLP
-Run the best values from Hyperparameter tuning for all $n$ at the same time. 
+Train MLP model with best hyperparameters and generate hidden label submission
 ```
-python MLP_ECE.py
+python pytorch_MLP_evaluation.py
+```
+Evaluate convergence behavior of trained MLP
+```
+python pytorch_MLP_convergence.py
 ```
 Run with the creation of the generalization bound. 
 ```
 python Model_Test_Genbound.py
 ```
-Run with the convergence analysis.
-```
-python convergence_analysis.py
-```
-Finding hyperparameters:
+Finding hyperparameters for singular MLPs: 
 ```
 python run_mlp_optimisation.py --search grid
 ```
-Run the optimized model for the hidden submission set to predict labels
+Finding hyperparameters for ensemble MLPs: 
 ```
-python train_mlp_hidden_submission.py 
+python run_mlp_ensemble_optimisation.py --search grid
 ```
 
 
