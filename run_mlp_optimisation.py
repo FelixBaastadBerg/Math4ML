@@ -33,7 +33,7 @@ cv_obj = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
     """
-    Maps n -> {'X': path, 'y': path}
+    Maps n to {'X': path, 'y': path}
     """
     variants: Dict[int, Dict[str, Path]] = {} 
     for p in data_dir.rglob("*.npy"):
@@ -54,14 +54,12 @@ def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
                 d["X"] = p
             else:
                 d["y"] = p
-    # only return pairs where we actually have both X and y
     return {n: d for n, d in variants.items() if d["X"] and d["y"]}
 
 
 def base_mlp_pipeline() -> Pipeline:
     """
-    Starting point for hyperparameter tuning. These are decent defaults that work reasonably well,
-    but we'll vary them during the search.
+    Starting point for hyperparameter tuning
     """
     return Pipeline([
         ("scaler", StandardScaler()),
@@ -82,7 +80,7 @@ def base_mlp_pipeline() -> Pipeline:
 # Search Spaces
 def grid_params() -> dict:
     """
-    Exhaustive grid for GridSearchCV. This will be slow but thorough.
+    Exhaustive grid for GridSearchCV. Slow but thorough
     """
     return {
         "clf__hidden_layer_sizes": [(256,128), (256,192), (256,256), (320,256), (384,256)],
@@ -96,8 +94,7 @@ def grid_params() -> dict:
 
 def random_distributions() -> dict:
     """
-    Parameter distributions for RandomizedSearchCV. Includes some continuous distributions
-    to explore the space more broadly without being exhaustive.
+    Parameter distributions for RandomizedSearchCV. Explore the space more broadly without being exhaustive
     """
     hls_choices = [
         (256,128), (256,192), (256,256), (320,256), (384,256),
@@ -115,7 +112,7 @@ def random_distributions() -> dict:
 
 def run_grid(X, y, cv, n_jobs, verbose):
     """
-    Grid search - tries all combinations. Slower but guarantees we don't miss anything.
+    Tries all combinations
     """
     est = base_mlp_pipeline()
     params = grid_params()
@@ -126,8 +123,7 @@ def run_grid(X, y, cv, n_jobs, verbose):
 
 def run_random(X, y, cv, n_jobs, verbose, n_iter):
     """
-    Random search - faster than grid, samples randomly from the distributions.
-    Good balance between speed and thoroughness.
+    Randomized search
     """
     est = base_mlp_pipeline()
     params = random_distributions()
@@ -147,8 +143,7 @@ def run_random(X, y, cv, n_jobs, verbose, n_iter):
 
 def run_bayes(X, y, cv_splits, n_trials, n_jobs):
     """
-    Bayesian optimization using Optuna. More intelligent than random search since it learns
-    from previous trials. Usually finds good params with fewer evaluations.
+    Bayesian optimization using Optuna
     """
     est = base_mlp_pipeline()
 
@@ -169,7 +164,8 @@ def run_bayes(X, y, cv_splits, n_trials, n_jobs):
         scores = cross_val_score(model, X, y, cv=cv_splits, scoring="accuracy", n_jobs=n_jobs)
         return float(np.mean(scores))
 
-    # Use TPE sampler (Tree-structured Parzen Estimator) - Optuna's default and pretty good
+    # TPE sampler (Tree-structured Parzen Estimator)
+    # Optuna's default 
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
     best_params = study.best_params
@@ -211,7 +207,7 @@ def main():
     all_rows: List[dict] = []
 
     for n, paths in tqdm(sorted(variants.items()), desc="Datasets", unit="set"):
-        print(f"\n=== n = {n} ===")
+        print(f"\nn = {n}")
         X = np.load(paths["X"])
         y = np.load(paths["y"])
         try:
@@ -224,17 +220,17 @@ def main():
 
         # Run the selected search method
         if args.search == "grid":
-            print("  > Grid search near best ...")
+            print(" > Grid search near best ...")
             best_score, best_params, best_est = run_grid(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose)
         elif args.search == "random":
-            print(f"  > RandomizedSearchCV (n_iter={args.n_trials}) near best ...")
+            print(f" > RandomizedSearchCV (n_iter={args.n_trials}) near best ...")
             best_score, best_params, best_est = run_random(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose, n_iter=args.n_trials)
         else: 
             # Bayesian optimization
-            print(f"  > Optuna Bayesian optimization (n_trials={args.n_trials}) near best ...")
+            print(f" > Optuna Bayesian optimization (n_trials={args.n_trials}) near best ...")
             best_score, best_params, best_est = run_bayes(X, y, cv_splits=args.folds, n_trials=args.n_trials, n_jobs=args.gs_jobs)
 
-        print(f"    best_acc={best_score:.4f}  best_params={best_params}")
+        print(f" best_acc={best_score:.4f} best_params={best_params}")
         all_rows.append({"n": n, "model": "MLP", "acc_mean": best_score, "best_params": best_params})
 
         # Save per-n results (useful for quick lookup)
@@ -243,7 +239,7 @@ def main():
         df_n.to_csv(out_csv, index=False)
         print(f"  Saved {out_csv}")
 
-    # Combined CSV for the entire run - makes it easy to compare across all n values
+    # Combined CSV for the entire run
     df_all = pd.DataFrame(all_rows).sort_values(["n", "acc_mean"], ascending=[True, False])
     df_all.to_csv(results_dir / "results_all.csv", index=False)
     print("\n=== Summary ===")

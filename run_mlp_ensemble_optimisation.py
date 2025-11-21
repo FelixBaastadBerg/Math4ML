@@ -32,7 +32,7 @@ SEED = 42
 
 def discover_variants(data_dir: Path) -> Dict[int, Dict[str, Path]]:
     """
-    Maps n -> {'X': path, 'y': path}
+    Maps n to {'X': path, 'y': path}
     """
     variants: Dict[int, Dict[str, Path]] = {}
     for p in data_dir.rglob("*.npy"):
@@ -72,7 +72,7 @@ def base_mlp_pipeline() -> Pipeline:
 # Search Spaces
 def grid_params() -> dict:
     """
-    Exhaustive grid - good for narrowing down after random search or when you have a smaller space
+    Exhaustive
     """
     return {
         "clf__hidden_layer_sizes": [(128,), (256,), (256,128), (512,256)],
@@ -85,7 +85,7 @@ def grid_params() -> dict:
 
 def random_distributions() -> dict:
     """
-    Parameter distributions for RandomizedSearchCV - faster exploration of the space
+    Parameter distributions for RandomizedSearchCV
     """
     return {
         "clf__hidden_layer_sizes": [(128,), (256,), (256,128), (512,256)],
@@ -97,7 +97,7 @@ def random_distributions() -> dict:
 
 def run_grid(X, y, cv, n_jobs, verbose):
     """
-    Grid search over the param space. Exhaustive but slow for large grids.
+    Ties all combinations
     """
     est = base_mlp_pipeline()
     params = grid_params()
@@ -108,7 +108,7 @@ def run_grid(X, y, cv, n_jobs, verbose):
 
 def run_random(X, y, cv, n_jobs, verbose, n_iter):
     """
-    Randomized search - samples n_iter random combinations. Much faster than grid.
+    Randomized search
     """
     est = base_mlp_pipeline()
     params = random_distributions()
@@ -128,13 +128,11 @@ def run_random(X, y, cv, n_jobs, verbose, n_iter):
 
 def run_bayes(X, y, cv_splits, n_trials, n_jobs):
     """
-    Bayesian optimization with Optuna. Intelligently searches based on past trials.
-    Usually finds competitive params with fewer evaluations than random search.
+    Bayesian optimization with Optuna
     """
     est = base_mlp_pipeline()
 
     def objective(trial):
-        # Optuna suggests params based on TPE (Tree-structured Parzen Estimator)
         params = {
             "clf__hidden_layer_sizes": trial.suggest_categorical("clf__hidden_layer_sizes", [(128,), (256,), (256,128), (512,256)]),
             "clf__activation": trial.suggest_categorical("clf__activation", ["relu", "tanh"]),
@@ -146,7 +144,8 @@ def run_bayes(X, y, cv_splits, n_trials, n_jobs):
         scores = cross_val_score(model, X, y, cv=cv_splits, scoring="accuracy", n_jobs=n_jobs)
         return float(np.mean(scores))
 
-    # TPE sampler is solid for hyperparameter optimization
+    # TPE sampler (Tree-structured Parzen Estimator)
+    # Optuna's default 
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
     best_params = study.best_params
@@ -164,7 +163,7 @@ def build_ensemble(best_params: dict, n_estimators: int = 5) -> VotingClassifier
     """
     estimators = []
     for i in range(n_estimators):
-        # strip the "clf__" prefix since we're instantiating MLPClassifier directly
+
         params_clean = {k.replace("clf__", ""): v for k, v in best_params.items()}
         clf = Pipeline([
             ("scaler", StandardScaler()),
@@ -194,7 +193,7 @@ def main():
     ap.add_argument("--ensemble-size", type=int, default=5, help="Number of models in the voting ensemble")
     args = ap.parse_args()
 
-    print("Searching in:", args.data_dir.resolve(), " | search:", args.search, " | n-trials:", args.n_trials, flush=True)
+    print("Searching in:", args.data_dir.resolve(), " search:", args.search, " n-trials:", args.n_trials, flush=True)
 
     # separate subfolder per method to avoid mixing results
     results_dir = Path(args.results_root) / args.search
@@ -216,31 +215,28 @@ def main():
     all_rows: List[dict] = []
 
     for n, paths in tqdm(sorted(variants.items()), desc="Datasets", unit="set"):
-        print(f"\n=== n = {n} ===")
+        print(f"\nn = {n}")
         X = np.load(paths["X"])
         y = np.load(paths["y"])
         print("X shape:", X.shape, " y mean:", f"{float(np.mean(y)):.4f}")
 
-        # Step 1: Find best hyperparameters for a single MLP
         if args.search == "grid":
-            print("  > Grid search for best single MLP ...")
+            print(" > Grid search for best single MLP ...")
             best_score, best_params, _ = run_grid(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose)
         elif args.search == "random":
-            print(f"  > Random search (n_iter={args.n_trials}) for best single MLP ...")
+            print(f" > Random search (n_iter={args.n_trials}) for best single MLP ...")
             best_score, best_params, _ = run_random(X, y, cv=args.folds, n_jobs=args.gs_jobs, verbose=args.gs_verbose, n_iter=args.n_trials)
         else:
-            print(f"  > Bayesian search (n_trials={args.n_trials}) for best single MLP ...")
+            print(f" > Bayesian search (n_trials={args.n_trials}) for best single MLP ...")
             best_score, best_params, _ = run_bayes(X, y, cv_splits=args.folds, n_trials=args.n_trials, n_jobs=args.gs_jobs)
 
-        print(f"  > Single MLP best acc={best_score:.4f}")
-        print(f"  > Best params={best_params}")
+        print(f" > Single MLP best acc={best_score:.4f}")
+        print(f" > Best params={best_params}")
 
-        # Step 2: Build ensemble with the best params and train it
         print(f"  > Building ensemble with {args.ensemble_size} members ...")
         ensemble = build_ensemble(best_params, n_estimators=args.ensemble_size)
         ensemble.fit(X, y)
 
-        # Step 3: Evaluate ensemble using cross-validation
         scores = cross_val_score(ensemble, X, y, cv=args.folds, scoring="accuracy", n_jobs=args.gs_jobs)
         print(f"  > Ensemble CV: mean acc={scores.mean():.4f} ± {scores.std():.4f}")
 
@@ -253,16 +249,14 @@ def main():
             "best_params": best_params
         })
 
-        # Save per-n CSV for quick reference
         df_n = pd.DataFrame([r for r in all_rows if r["n"] == n])
         out_csv = results_dir / f"results_n{n}.csv"
         df_n.to_csv(out_csv, index=False)
         print(f"  Saved {out_csv}")
 
-    # Combined results across all n - easier to compare performance
     df_all = pd.DataFrame(all_rows).sort_values(["n", "ensemble_acc_mean"], ascending=[True, False])
     df_all.to_csv(results_dir / "results_all.csv", index=False)
-    print("\n=== Summary ===")
+    print("\nSummary")
     print(df_all.to_string(index=False))
 
 

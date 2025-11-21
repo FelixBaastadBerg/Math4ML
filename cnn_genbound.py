@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 """
-The code:
-1. Loads kryptonite-10-X.npy and kryptonite-10-Y.npy
-2. Splits into train/test
-3. Scales inputs with StandardScaler
-4. Trains the CNN and logs metrics per epoch
-5. Writes logs to a CSV file
+The code Loads n=10 kryptonite X and y, splits into train/test, scales inputs with StandardScaler, 
+trains CNN and logs metrics per epoch, and writes logs to CSV file
 
-Usage:
-    python cnn_genbound.py --data-dir ./Datasets --epochs 40 --batch-size 64 --log-file genbound_log.csv
+Usage: python cnn_genbound.py --data-dir ./Datasets --epochs 40 --batch-size 64 --log-file genbound_log.csv
 """
 
 from pathlib import Path
@@ -29,24 +24,17 @@ from tensorflow.keras import regularizers
 SEED = 42
 
 
-# ---------------------------------------------------------------------------
-# Generalization bound utilities
-# ---------------------------------------------------------------------------
+# Utilities
 
 def compute_rho_product(model: keras.Model) -> float:
     """
-    Compute ρ(w) = product of Frobenius norms of the weight matrices across
-    all Conv1D and Dense layers.
-
-    ρ(w) = Π_l ||W_l||_F
-    
-    This is the core complexity measure in norm-based generalization bounds.
-    Larger ρ = larger/more complex network = worse generalization guarantees.
+    Compute rho(w) = product of Frobenius norms of the weight matrices across
+    all Conv1D and Dense layers
     """
     rho = 1.0
     for layer in model.layers:
         if isinstance(layer, (layers.Conv1D, layers.Dense)):
-            # layer.kernel is a tf.Variable; convert to numpy and take Frobenius norm
+            # layer.kernel is a tf.Variable. Convert to numpy and take Frobenius norm
             W = layer.kernel.numpy()
             rho *= np.linalg.norm(W)  # Frobenius norm (sqrt of sum of squared elements)
     return float(rho)
@@ -60,70 +48,46 @@ def compute_cnn_gen_bound(
     delta: float = 1e-3,
 ) -> float:
     """
-    Compute the Galanti & Xu–style generalization bound for CNNs with a full
-    last classification layer, adapted to this 1D CNN.
-
-    Bound (architecture-aware Rademacher-style) in simplified form:
-
-    err_P(f_w) - err_S^γ(f_w)
-        ≤
-    2√2 (ρ(w) + 1) / (γ m)
-      * (1 + sqrt(2 ( log(2)L + Σ_{l=1}^{L-1} log(k_l) + log(C) )))
-      * sqrt( Π_{l=1}^{L-1} k_l * max_j Σ_i |x_{ij}|^2 )
-      + 3 * sqrt( log(2 (ρ(w) + 2)^2 / δ) / (2 m) )
-
-    where:
-      - m is the number of training samples
-      - C is the number of classes
-      - k_l is the kernel size of conv layer l
-      - ρ(w) = Π_l ||W_l||_F over all weight layers (conv + dense)
-      - X_train is the (scaled) input to the network
-
-    We treat:
-      - L = (#conv layers) + 1 (final fully connected classification stage)
-      - conv layers are the ones contributing k_l
-      
-    The bound grows with network complexity (ρ, L) and shrinks with more data (m).
-    It's a PAC-style upper bound on test error = train error + this bound.
+    Compute the Galanti & Xu–style generalization bound for CNNs 
     """
     m, d0 = X_train.shape
     if m == 0:
         return float("nan")
 
-    # Collect conv kernel sizes (k_l) - these contribute to the bound
+    # Collect conv kernel sizes (k_l) as these contribute to the bound
     conv_kernel_sizes = []
     for layer in model.layers:
         if isinstance(layer, layers.Conv1D):
             conv_kernel_sizes.append(int(layer.kernel_size[0]))
 
     if len(conv_kernel_sizes) == 0:
-        # Degenerate case: no conv layers found - use a dummy kernel size
+        # Degenerate case: no conv layers found so use a dummy kernel size
         conv_kernel_sizes = [1]
 
     # L: total number of "complexity-contributing" layers (conv + final classification)
     L = len(conv_kernel_sizes) + 1
 
-    # ρ(w): product of Frobenius norms of all Conv1D and Dense weights
+    # rho(w): product of Frobenius norms of all Conv1D and Dense weights
     rho = compute_rho_product(model)
 
-    # Σ log(k_l) - log of kernel sizes, contributes to the logarithmic factor
+    # Sigma log(k_l) -> log of kernel sizes, contributes to the logarithmic factor
     sum_log_k = np.sum(np.log(np.array(conv_kernel_sizes, dtype=np.float64)))
 
     # Constant factor inside the sqrt in the bound
-    # log(2)L + Σ log(k_l) + log(C) - this scales logarithmically with architecture
+    # log(2)L + Sigma log(k_l) + log(C) = this scales logarithmically with architecture
     const_inner = np.log(2.0) * L + sum_log_k + np.log(float(num_classes))
     const_factor = 1.0 + np.sqrt(2.0 * const_inner)
 
-    # Π k_l - product of kernel sizes
+    # Pi k_l = product of kernel sizes
     product_k = float(np.prod(conv_kernel_sizes))
 
-    # max_j Σ_i |x_{ij}|^2
+    # max_j Sigma_i |x_{ij}|^2
     # X_train: shape (m, d0)
     # For each feature j, sum the squares across all training samples,
-    # then take the max feature. This captures the "energy" in the input.
+    # then take the max feature. This captures the "energy" in the input
     z_term = float(np.max(np.sum(np.square(X_train), axis=0)))
 
-    # First term: empirical Rademacher complexity * kernel/architecture factors
+    # First term = empirical Rademacher complexity * kernel/architecture factors
     term1 = (
         2.0
         * np.sqrt(2.0)
@@ -142,10 +106,7 @@ def compute_cnn_gen_bound(
     return float(term1 + term2)
 
 
-# ---------------------------------------------------------------------------
-# Model definition (best hyperparameters)
-# ---------------------------------------------------------------------------
-
+# Best hyperparams model
 def make_best_cnn_1d(
     input_dim: int,
     filters1: int = 200,
@@ -158,19 +119,7 @@ def make_best_cnn_1d(
 ) -> keras.Model:
     """
     Build the 2-layer 1D CNN with one hidden Dense layer and a single-unit
-    sigmoid output, using the best hyperparameters you found.
-    
-    Architecture:
-      Input -> Conv1D + BN + ReLU 
-            -> Conv1D + BN + ReLU
-            -> Conv1D + BN + ReLU
-            -> Flatten
-            -> [Dropout]
-            -> Dense (128) + ReLU
-            -> Dense (1) + Sigmoid (binary classification)
-    
-    All weights use L2 regularization to keep norms bounded (helps the generalization bound).
-    Biases are disabled since BatchNorm will learn a shift anyway.
+    sigmoid output
     """
     inputs = keras.Input(shape=(input_dim,))
     # Reshape to (sequence_length, channels) for Conv1D
@@ -181,7 +130,7 @@ def make_best_cnn_1d(
         filters1,
         kernel_size=kernel_size,
         padding="same",
-        use_bias=False,  # <- disable bias since BN will learn a shift
+        use_bias=False,  
         kernel_regularizer=regularizers.l2(lambda_l2),
     )(x)
     x = layers.BatchNormalization()(x)
@@ -223,7 +172,7 @@ def make_best_cnn_1d(
         kernel_regularizer=regularizers.l2(lambda_l2),
     )(x)
 
-    # Output layer: single sigmoid for binary classification
+    # Output layer -> single sigmoid for binary classification
     outputs = layers.Dense(
         1,
         activation="sigmoid",
@@ -233,8 +182,8 @@ def make_best_cnn_1d(
     model = keras.Model(inputs=inputs, outputs=outputs)
 
     model.compile(
-        # optimizer=keras.optimizers.Adam(learning_rate=lr),
-        # Using SGD with momentum instead - often generalizes better, more stable for generalization bounds
+        # optimizer=keras.optimizers.Adam(learning_rate=lr)
+        # Using SGD with momentum instead which often generalizes better and is more stable for generalization bounds
         optimizer=keras.optimizers.SGD(learning_rate=lr, momentum=0.9),
         loss="binary_crossentropy",
         metrics=["accuracy"],
@@ -242,14 +191,10 @@ def make_best_cnn_1d(
     return model
 
 
-# ---------------------------------------------------------------------------
 # Data utilities
-# ---------------------------------------------------------------------------
-
 def find_kryptonite10(data_dir: Path):
     """
-    Find kryptonite-10-X.npy and kryptonite-10-Y.npy under data_dir.
-    Returns (X_path, y_path) or (None, None) if not found.
+    Find n=10 kryptonite X and y
     """
     X_path = None
     y_path = None
@@ -264,7 +209,7 @@ def find_kryptonite10(data_dir: Path):
                 n = int(tok)
                 break
 
-        # We only care about n=10 for this script
+        # we only care about n=10 for this script
         if n != 10:
             continue
 
@@ -277,20 +222,14 @@ def find_kryptonite10(data_dir: Path):
     return X_path, y_path
 
 
-# ---------------------------------------------------------------------------
-# Callback for logging per epoch
-# ---------------------------------------------------------------------------
 
 class GenBoundLogger(keras.callbacks.Callback):
     """
     Keras callback that logs, at the end of each epoch:
-      - train accuracy
-      - test (validation) accuracy
-      - generalization bound for the current weights
+        1) train accuracy
+        2) test (validation) accuracy
+        3) and generalization bound for the current weights
     and stores them in self.records.
-    
-    This lets us track how the bound evolves during training.
-    Ideally, both train error and bound should decrease over time.
     """
 
     def __init__(self, X_train_scaled, num_classes, gamma=1.0, delta=1e-3):
@@ -332,10 +271,6 @@ class GenBoundLogger(keras.callbacks.Callback):
         )
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("./Datasets"))
@@ -363,9 +298,7 @@ def main():
             return 0.001
 
 
-    # =====================================================================
     # Load data
-    # =====================================================================
     X_path, y_path = find_kryptonite10(args.data_dir)
     if X_path is None or y_path is None:
         raise SystemExit(
@@ -391,9 +324,7 @@ def main():
             f"WARNING: expected binary classification, but found {num_classes} classes."
         )
 
-    # =====================================================================
     # Train/test split
-    # =====================================================================
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -402,17 +333,12 @@ def main():
         stratify=y,  # keep class proportions in both sets
     )
 
-    # =====================================================================
-    # Standardize features
-    # =====================================================================
     # Important for generalization bounds: normalized inputs have bounded ||x||^2 terms
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # =====================================================================
-    # Build model with best hyperparameters
-    # =====================================================================
+    # Build model 
     input_dim = X_train_scaled.shape[1]
     model = make_best_cnn_1d(
         input_dim=input_dim,
@@ -427,9 +353,6 @@ def main():
 
     model.summary()
 
-    # =====================================================================
-    # Train with callback for logging generalization bound
-    # =====================================================================
     gen_logger = GenBoundLogger(
         X_train_scaled=X_train_scaled,
         num_classes=num_classes,
@@ -437,7 +360,7 @@ def main():
         delta=1e-3,  # confidence parameter (lower = more conservative bound)
     )
 
-    # Learning rate scheduler - decays LR according to schedule above
+    # learning rate scheduler
     lr_cb = keras.callbacks.LearningRateScheduler(lr_schedule, verbose=1)
     
     history = model.fit(
@@ -450,16 +373,14 @@ def main():
         verbose=1,
     )
 
-    # =====================================================================
     # Save logs to CSV
-    # =====================================================================
     df_log = pd.DataFrame(gen_logger.records)
     df_log.to_csv(args.log_file, index=False)
     print(
         f"\nSaved per-epoch logs (train_acc, test_acc, gen_bound) to: {args.log_file}"
     )
 
-    # Print final metrics for a quick sanity check
+    # final metrics print
     test_loss, test_acc = model.evaluate(X_test_scaled, y_test, verbose=0)
     print(f"\nFinal test accuracy: {test_acc:.4f}")
 

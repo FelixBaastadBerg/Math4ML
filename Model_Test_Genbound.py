@@ -22,7 +22,7 @@ TRAIN_DIR = Path("./Datasets/Train_Data")
 TEST_DIR  = Path("./Datasets/Test_Data")
 
 
-METHOD = "random" # which tuning results to use: "random", "grid", or "bayes"
+METHOD = "random" # which tuning results to use "random", "grid", or "bayes"
 
 # consolidate per-n CSVs into a single results_all.csv if it doesn't exist
 res_dir = Path("./MLP_optimization") / METHOD
@@ -42,7 +42,7 @@ EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 SEED = 45
 TARGET_N = 20        # which dataset size to analyze
-N_EPOCHS = 100       # how many training epochs to run
+N_EPOCHS = 100      
 
 
 def ensure_dir(p: Path):
@@ -51,8 +51,7 @@ def ensure_dir(p: Path):
 
 def clean_np_floats(s: str) -> str:
     """
-    Replace np.float64(1.23e-5) with 1.23e-5 in a string representation.
-    Pandas sometimes wraps floats in np.float64(...) when serializing to CSV.
+    Replace np.float64(1.23e-5) with 1.23e-5 in a string representation
     """
     return re.sub(r"np\.float64\(([^)]+)\)", r"\1", s)
 
@@ -82,7 +81,6 @@ def load_best_params_by_n(results_csv: Path) -> Dict[int, Dict[str, Any]]:
         else:
             params = dict(raw)
 
-        # sklearn expects tuple not list for hidden_layer_sizes
         hls_key = "clf__hidden_layer_sizes"
         if hls_key in params and isinstance(params[hls_key], list):
             params[hls_key] = tuple(params[hls_key])
@@ -96,8 +94,7 @@ _PAT = re.compile(r"^kryptonite-(\d+)-([xy])-(train|test)\.npy$", re.IGNORECASE)
 
 def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Path]]:
     """
-    Scan dir_path for kryptonite-n-(x|y)-<expected_split>.npy 
-    Return { n: {'X': Path or None, 'y': Path or None} }
+    Scan dir_path for kryptonite 
     """
     idx: Dict[int, Dict[str, Path]] = {}
     for p in dir_path.rglob("*.npy"):
@@ -119,8 +116,7 @@ def _index_split(dir_path: Path, expected_split: str) -> Dict[int, Dict[str, Pat
 
 def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[str, Path]]:
     """
-    Find matching train/test pairs by n.
-    Returns { n: {"Xtr","ytr","Xte","yte"} } only when all four files exist.
+    Find matching train/test pairs by n
     """
     tr = _index_split(train_dir, "train")
     te = _index_split(test_dir, "test")
@@ -137,8 +133,7 @@ def discover_dataset_pairs(train_dir: Path, test_dir: Path) -> Dict[int, Dict[st
 
 def build_pipeline_from_params(best_params: Dict[str, Any]) -> Pipeline:
     """
-    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied.
-    Set up for epoch-wise training: warm_start=True, max_iter=1 per fit call.
+    Returns Pipeline(StandardScaler -> MLPClassifier) with best_params applied
     """
     pipe = Pipeline([
         ("scaler", StandardScaler()),
@@ -169,19 +164,7 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
                                      X_train: np.ndarray,
                                      y_train: np.ndarray) -> float | None:
     """
-    Compute a spectral norm-based generalization bound term inspired by Bartlett et al. (2017):
-    
-        bound_term ~ ( R * sqrt(S) ) / (gamma_hat * sqrt(m))
-
-    Where:
-        R  = product of spectral norms ||W_l||_2 of weight matrices
-        S  = sum_l ||W_l||_F^2 / ||W_l||_2^2 (Frobenius / spectral norm squared)
-        m  = number of training examples
-        gamma_hat = empirical margin, approximated from predict_proba:
-            margin_i = p_true(i) - max_{y != true} p_y(i)
-            gamma_hat = min_i margin_i (smallest margin across training set)
-    
-    Returns None if conditions aren't met (no proba, no trained weights, etc).
+    Compute a spectral norm-based generalization bound term inspired by Bartlett paper
     """
 
     # Must have probabilities and classes
@@ -208,7 +191,6 @@ def compute_spectral_norm_bound_term(clf: MLPClassifier,
     label_to_idx = {label: idx for idx, label in enumerate(classes)}
 
     # Build margin from probabilities:
-    # margin_i = p_true(i) - max_{y != true} p_y(i)
     margins: List[float] = []
     for yi, probs in zip(y_train, proba):
         if yi not in label_to_idx:
@@ -269,7 +251,7 @@ if __name__ == "__main__":
     n = TARGET_N
     paths = pairs[n]
 
-    print(f"\n=== Epoch-wise evaluation for n = {n} (method={METHOD}) ===")
+    print(f"\nEpoch-wise evaluation for n = {n} (method={METHOD})")
     Xtr = np.load(paths["Xtr"])
     ytr = np.load(paths["ytr"])
     Xte = np.load(paths["Xte"])
@@ -286,7 +268,7 @@ if __name__ == "__main__":
     # Prepare logging structure
     epoch_logs = []
 
-    # Epoch-wise training loop: fit one epoch at a time and track metrics
+    # Epoch-wise training loop. Fit one epoch at a time and track metrics
     for epoch in range(1, N_EPOCHS + 1):
         t0 = time.time()
         model.fit(Xtr, ytr)   # 1 epoch because clf__max_iter=1 and warm_start=True

@@ -138,7 +138,7 @@ def compute_ece(y_true, y_prob, n_bins=15, strategy="uniform"):
         # Uniform binning
         bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
     else:
-        # Adaptive (quantile-based) binning
+        # Adaptive binning
         quantiles = np.linspace(0.0, 1.0, n_bins + 1)
         bin_edges = np.unique(np.quantile(y_prob, quantiles))
         if bin_edges[0] > 0.0:

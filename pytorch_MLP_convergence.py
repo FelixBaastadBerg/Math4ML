@@ -24,8 +24,8 @@ CSV_HPARAMS = "./MLP_ECE/MLP_optimization/random/results_all.csv"
 TRAIN_DATA_PATH = "./Datasets/Train_Data"
 OUTPUT_DIR = "PyTorch_Convergence" 
 VAL_SUMMARY_CSV = "pytorch_val_summary.csv" 
-# Just to commit again
 
+# Just to commit again
 
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_sizes, activation, dropout, num_classes=1):
@@ -111,7 +111,7 @@ def compute_accuracy(model, loader, device):
 
 def parse_params(row):
     """
-    Get hyperparameters from results_all.csv - added dropout after convergence analysis
+    Get hyperparameters from results_all.csv. Added dropout after convergence analysis
     """
     raw = row["best_params"]
     dropout = float(row["dropout"])
@@ -212,7 +212,7 @@ def run_5fold_cv(X, y, params, device,
                 epochs_no_improve += 1
 
             if epochs_no_improve >= patience:
-                print(f"  Early stopping on fold {fold_idx+1} at epoch {epoch+1}")
+                print(f" Early stopping on fold {fold_idx+1} at epoch {epoch+1}")
                 break
 
         # Pad to full length for averaging
@@ -245,7 +245,7 @@ def run_convergence_for_n(n, device):
     row = df[df.n == n].iloc[0]
     params = parse_params(row)
 
-    print(f"\n===== Convergence analysis for n={n} =====")
+    print(f"\nConvergence analysis for n={n}")
     print("Parameters:", params)
 
     X_train = np.load(f"{TRAIN_DATA_PATH}/kryptonite-{n}-x-train.npy")
