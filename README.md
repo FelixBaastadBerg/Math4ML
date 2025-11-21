@@ -84,25 +84,23 @@ python split_kryptonite_test.py
 .
 ├── Convergence_Analysis/               # Outputs for training curve analysis
 ├── Datasets/                           # Kryptonite-n data (Train_Data / Test_Data)
-├── Hidden_Kryptonite_Submission/       # Submission labels for hidden Kryptonite-n datasets
+├── Kryptonite_Label_Submission/        # Submission labels for hidden Kryptonite-n datasets
 ├── Initial_Exploration/                # Notebooks from initial exploration of dataset along with figures
-├── MLP_ECE/                            # Saved Single-MLP calibration results, plots, evaluation metrics, and hyperparameter search results
+├── MLP_ECE/                            # Saved single MLP hyperparameter search results (code structure depends on internal MLP_optimization/ and random/ files)
 ├── MLP_ensemble_optimization/          # Ensemble hyperparameter search results
 ├── trained_mlp_ensembles/              # Saved ensemble members, manifests, evaluation metrics, and results
-│
 ├── cnn_genbound.py                     # Generalisation bounds for CNN models 
-├── convergence_analysis.py             # Scripts to generate training/validation curves
-├── explore_datasets.ipynb              # Notebook for PCA, correlations, etc.
-├── MLP_ECE_eval.py                     # Evaluate *single* tuned MLP + ECE + reliability
+├── draw_chart_for_mlp.py               # Chart showing singular MLP accuracies with Hoeffding bounds 
 ├── Model_Test_Genbound.py              # Generalisation bounds for selected models
+├── pytorch_MLP_convergence.py          # Scripts to generate training/validation curves
+├── pytorch_MLP_evaluation.py           # Evaluate *single* tuned MLP + ECE + generate hidden labels for submission
 ├── requirements.txt                    # Python package dependencies
-│
 ├── run_baselines_selectable.py         # Train/evaluate CNN & SVM baselines
 ├── run_mlp_ensemble_optimisation.py    # Hyperparameter tuning for ensemble MLPs
 ├── run_mlp_optimisation.py             # Hyperparameter tuning for single MLPs
 ├── split_kryptonite_test.py            # (Optional) helper for dataset splitting
+├── svm.py                              # Try SVM on dataset
 ├── train_mlp_ensemble.py               # Train & evaluate MLP ensembles + uncertainty
-└── train_mlp_hidden_submission.py      # Train MLP on full dataset and generate labels for hidden Kryptonite-n datasets
 
 ```
 
